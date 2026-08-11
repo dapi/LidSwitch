@@ -8,12 +8,17 @@ let package = Package(
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "LidSwitch", targets: ["LidSwitch"])
+        .executable(name: "LidSwitch", targets: ["LidSwitch"]),
+        .executable(name: "LidSwitchHelper", targets: ["LidSwitchHelper"])
     ],
     targets: [
         .target(name: "LidSwitchCore"),
         .executableTarget(
             name: "LidSwitch",
+            dependencies: ["LidSwitchCore"]
+        ),
+        .executableTarget(
+            name: "LidSwitchHelper",
             dependencies: ["LidSwitchCore"]
         ),
         .executableTarget(

@@ -96,4 +96,3 @@ private extension Array {
         return AnySequence((0...(self.count - count)).lazy.map { self[$0..<($0 + count)] })
     }
 }
-

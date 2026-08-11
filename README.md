@@ -34,7 +34,13 @@ open ~/Applications/LidSwitch.app
 
 Left-click the laptop icon in the menu bar to switch the setting immediately.
 Right-click it to see the current state, refresh it, or quit LidSwitch. macOS
-asks for an administrator password when the setting is changed.
+asks for one-time approval of its narrowly scoped privileged helper. Subsequent
+switches do not ask for a password.
+
+The installed helper is owned by `root` and accepts only three fixed operations:
+check access, enable lid startup, or disable lid startup. It does not accept
+shell commands or arbitrary NVRAM keys from the app. Right-click the icon and
+choose **Remove passwordless switching…** to remove it and its permission.
 
 ## How it works
 
@@ -47,6 +53,11 @@ values:
   for startup when power is connected
 
 LidSwitch refuses to overwrite unknown values.
+
+During one-time setup, LidSwitch installs the helper at
+`/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` and validates a narrow
+rule in `/etc/sudoers.d/me.dapi.LidSwitch`. The rule permits only the current
+account to run that root-owned helper without another password prompt.
 
 Apple documentation:
 https://support.apple.com/en-gb/120622

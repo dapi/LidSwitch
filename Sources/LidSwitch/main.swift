@@ -10,6 +10,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         keyEquivalent: ""
     )
     private let statusTextItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
+    private let helperAccessItem = NSMenuItem(
+        title: "Set up passwordless switching…",
+        action: #selector(manageHelperAccess),
+        keyEquivalent: ""
+    )
+    private let helperManager = PrivilegedHelperManager()
     private var preference: BootPreference = .defaultBehavior
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -37,6 +43,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         )
         refreshItem.target = self
         menu.addItem(refreshItem)
+        menu.addItem(.separator())
+
+        helperAccessItem.target = self
+        menu.addItem(helperAccessItem)
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -80,17 +90,58 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             return
         }
 
-        guard let command = preference.command(toStartWhenLidOpens: !currentState) else {
+        guard preference.command(toStartWhenLidOpens: !currentState) != nil else {
             return
         }
 
         do {
-            try runWithAdministratorPrivileges(command.shellCommand)
+            if !helperManager.isInstalled {
+                let alert = NSAlert()
+                alert.messageText = "Set up passwordless switching?"
+                alert.informativeText = "macOS will ask for your administrator password once to install LidSwitch’s narrowly scoped helper. Future switches won’t ask again."
+                alert.addButton(withTitle: "Set Up")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                try helperManager.install()
+            }
+
+            // The root-owned helper independently derives the exact command
+            // from the requested state and the current NVRAM value.
+            try helperManager.setStartsWhenLidOpens(!currentState)
             refresh()
         } catch let error as NSError where error.code == -128 {
-            // The user cancelled the administrator prompt.
+            // The user cancelled the one-time administrator prompt.
         } catch {
             showError(title: "Couldn’t update the setting", message: error.localizedDescription)
+        }
+    }
+
+    @objc private func manageHelperAccess() {
+        if helperManager.isInstalled {
+            let alert = NSAlert()
+            alert.messageText = "Remove passwordless switching?"
+            alert.informativeText = "macOS will ask for your administrator password to remove the helper and its permission."
+            alert.addButton(withTitle: "Remove")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+            do {
+                try helperManager.uninstall()
+                updateUI()
+            } catch let error as NSError where error.code == -128 {
+                // The user cancelled the administrator prompt.
+            } catch {
+                showError(title: "Couldn’t remove helper", message: error.localizedDescription)
+            }
+        } else {
+            do {
+                try helperManager.install()
+                updateUI()
+            } catch let error as NSError where error.code == -128 {
+                // The user cancelled the administrator prompt.
+            } catch {
+                showError(title: "Couldn’t set up passwordless switching", message: error.localizedDescription)
+            }
         }
     }
 
@@ -145,22 +196,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             )
             statusItem.button?.toolTip = "LidSwitch: unknown setting — right-click for details"
         }
-    }
 
-    private func runWithAdministratorPrivileges(_ shellCommand: String) throws {
-        let escaped = shellCommand
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = "do shell script \"\(escaped)\" with administrator privileges"
-
-        var errorInfo: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&errorInfo)
-        if result == nil || errorInfo != nil {
-            throw NSError(
-                domain: "LidSwitch.AppleScript",
-                code: errorInfo?[NSAppleScript.errorNumber] as? Int ?? 1,
-                userInfo: [NSLocalizedDescriptionKey: errorInfo?[NSAppleScript.errorMessage] as? String ?? "Unknown error"]
-            )
+        if helperManager.isInstalled {
+            helperAccessItem.title = "Remove passwordless switching…"
+        } else {
+            helperAccessItem.title = "Set up passwordless switching…"
         }
     }
 
