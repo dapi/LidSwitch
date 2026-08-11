@@ -110,6 +110,8 @@ Store-ответа перед этой работой.
 Следующий вопрос уже не выбор, а план исполнения: spike `check-version`, затем
 миграция allowlist операций, update/uninstall и regression matrix.
 
+Результат реализации и оставшийся live gate: [M2 spike](m2-spike-result.md).
+
 ## Решение 2: подача текущего продукта в Mac App Store
 
 ### Замороженный набор вариантов

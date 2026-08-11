@@ -9,18 +9,33 @@ let package = Package(
     ],
     products: [
         .executable(name: "LidSwitch", targets: ["LidSwitch"]),
-        .executable(name: "LidSwitchHelper", targets: ["LidSwitchHelper"])
+        .executable(name: "LidSwitchHelper", targets: ["LidSwitchHelper"]),
+        .executable(name: "LidSwitchDaemon", targets: ["LidSwitchDaemon"]),
+        .executable(name: "LidSwitchUnauthorizedProbe", targets: ["LidSwitchUnauthorizedProbe"])
     ],
     targets: [
         .target(name: "LidSwitchCore"),
+        .target(name: "LidSwitchDaemonProtocol"),
         .executableTarget(
             name: "LidSwitch",
-            dependencies: ["LidSwitchCore", "LidSwitchAuthorizationShim"]
+            dependencies: [
+                "LidSwitchCore",
+                "LidSwitchAuthorizationShim",
+                "LidSwitchDaemonProtocol"
+            ]
         ),
         .target(name: "LidSwitchAuthorizationShim"),
         .executableTarget(
             name: "LidSwitchHelper",
             dependencies: ["LidSwitchCore"]
+        ),
+        .executableTarget(
+            name: "LidSwitchDaemon",
+            dependencies: ["LidSwitchDaemonProtocol"]
+        ),
+        .executableTarget(
+            name: "LidSwitchUnauthorizedProbe",
+            dependencies: ["LidSwitchDaemonProtocol"]
         ),
         .executableTarget(
             name: "LidSwitchCoreChecks",
