@@ -10,19 +10,23 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         keyEquivalent: ""
     )
     private let statusTextItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
+    private let forecastItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let helperAccessItem = NSMenuItem(
         title: "Set up passwordless switching…",
         action: #selector(manageHelperAccess),
         keyEquivalent: ""
     )
     private let helperManager = PrivilegedHelperManager()
+    private let forecastController = ClosedLidForecastController()
     private var preference: BootPreference = .defaultBehavior
+    private var batterySnapshot: BatterySnapshot?
+    private var closedLidEstimate: ClosedLidEstimate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "LidSwitch")
+            button.image = StatusIconRenderer.image(forecastHours: nil)
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -30,10 +34,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         toggleItem.target = self
         statusTextItem.isEnabled = false
+        forecastItem.isEnabled = false
 
         menu.delegate = self
         menu.addItem(toggleItem)
         menu.addItem(statusTextItem)
+        menu.addItem(forecastItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(
@@ -56,7 +62,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         )
         menu.addItem(quitItem)
 
+        forecastController.didUpdate = { [weak self] battery, estimate in
+            self?.batterySnapshot = battery
+            self?.closedLidEstimate = estimate
+            self?.updateUI()
+        }
+
         refresh()
+        forecastController.start()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -172,35 +185,52 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             toggleItem.state = .on
             toggleItem.isEnabled = true
             statusTextItem.title = "Opening the lid starts this Mac"
-            statusItem.button?.image = NSImage(
-                systemSymbolName: "laptopcomputer",
-                accessibilityDescription: "Startup when opening the lid is enabled"
-            )
-            statusItem.button?.toolTip = "LidSwitch: lid startup is on — click to turn off"
         case false:
             toggleItem.state = .off
             toggleItem.isEnabled = true
             statusTextItem.title = "Opening the lid won’t start this Mac"
-            statusItem.button?.image = NSImage(
-                systemSymbolName: "laptopcomputer.slash",
-                accessibilityDescription: "Startup when opening the lid is disabled"
-            )
-            statusItem.button?.toolTip = "LidSwitch: lid startup is off — click to turn on"
         case nil:
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
             statusTextItem.title = "Unknown system setting"
-            statusItem.button?.image = NSImage(
-                systemSymbolName: "laptopcomputer.trianglebadge.exclamationmark",
-                accessibilityDescription: "Unknown lid startup setting"
-            )
-            statusItem.button?.toolTip = "LidSwitch: unknown setting — right-click for details"
         }
+
+        updateForecastUI()
 
         if helperManager.isInstalled {
             helperAccessItem.title = "Remove passwordless switching…"
         } else {
             helperAccessItem.title = "Set up passwordless switching…"
+        }
+    }
+
+    private func updateForecastUI() {
+        let startupDescription: String
+        switch preference.startsWhenLidOpens {
+        case true:
+            startupDescription = "lid startup is on — click to turn off"
+        case false:
+            startupDescription = "lid startup is off — click to turn on"
+        case nil:
+            startupDescription = "unknown lid startup setting"
+        }
+
+        guard let batterySnapshot, batterySnapshot.isOnBattery else {
+            forecastItem.isHidden = true
+            statusItem.button?.image = StatusIconRenderer.image(forecastHours: nil)
+            statusItem.button?.toolTip = "LidSwitch: \(startupDescription)"
+            return
+        }
+
+        forecastItem.isHidden = false
+        if let closedLidEstimate {
+            forecastItem.title = "If closed now: ≈ \(closedLidEstimate.hours) h"
+            statusItem.button?.image = StatusIconRenderer.image(forecastHours: closedLidEstimate.hours)
+            statusItem.button?.toolTip = "LidSwitch: ≈ \(closedLidEstimate.hours) h with the lid closed; \(startupDescription)"
+        } else {
+            forecastItem.title = "Closed-lid estimate: learning…"
+            statusItem.button?.image = StatusIconRenderer.image(forecastHours: nil)
+            statusItem.button?.toolTip = "LidSwitch: learning closed-lid battery use; \(startupDescription)"
         }
     }
 

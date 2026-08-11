@@ -35,6 +35,27 @@ check(
     "Enabling lid startup should preserve disabled power startup"
 )
 
+let sleepLog = """
+2026-08-01 20:00:00 +0500 Sleep                Entering Sleep state due to 'Clamshell Sleep': Using Batt (Charge:80%)
+2026-08-01 21:00:00 +0500 DarkWake             Using BATT (Charge:80%)
+2026-08-02 06:00:00 +0500 Wake                 Wake from Deep Idle due to lid Using BATT (Charge:76%)
+2026-08-03 20:00:00 +0500 Sleep                Entering Sleep state due to 'Clamshell Sleep': Using Batt (Charge:70%)
+2026-08-04 06:00:00 +0500 Wake                 Wake from Deep Idle due to lid Using BATT (Charge:65%)
+"""
+let closedLidEstimate = ClosedLidEstimator.estimate(log: sleepLog, currentChargePercent: 90)
+check(closedLidEstimate?.sampleCount == 2, "Should learn from two clamshell sessions")
+check(closedLidEstimate?.hours == 200, "Should project hours from weighted standby drain")
+
+let pluggedInSleepLog = """
+2026-08-01 20:00:00 +0500 Sleep                Entering Sleep state due to 'Clamshell Sleep': Using Batt (Charge:80%)
+2026-08-01 22:00:00 +0500 Assertions           Using AC(Charge: 79)
+2026-08-02 06:00:00 +0500 Wake                 Wake from Deep Idle due to lid Using BATT (Charge:76%)
+"""
+check(
+    ClosedLidEstimator.estimate(log: pluggedInSleepLog, currentChargePercent: 90) == nil,
+    "Should ignore sessions that used external power"
+)
+
 print("All LidSwitchCore checks passed")
 
 private func check(_ condition: @autoclosure () -> Bool, _ message: String) {
