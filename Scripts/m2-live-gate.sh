@@ -9,6 +9,33 @@ app_executable="$app_dir/Contents/MacOS/LidSwitch"
 daemon_executable="$app_dir/Contents/MacOS/LidSwitchDaemon"
 probe_executable="$repo_dir/.build/release/LidSwitchUnauthorizedProbe"
 legacy_helper="/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper"
+evidence_dir="$repo_dir/dist/m2-live-evidence"
+evidence_tag="${LIDSWITCH_M2_EVIDENCE_TAG:-$(/bin/date -u '+%Y%m%dT%H%M%SZ')-$action}"
+update_id="${LIDSWITCH_M2_UPDATE_ID:-default}"
+update_state_dir="$evidence_dir/update-$update_id-baseline"
+
+if [[ -z "$evidence_tag" || "$evidence_tag" == *[!A-Za-z0-9._-]* \
+    || -z "$update_id" || "$update_id" == *[!A-Za-z0-9._-]* ]]; then
+    print -u2 "Evidence tag and update ID may contain only letters, digits, dot, underscore, and hyphen"
+    exit 2
+fi
+
+mkdir -p "$evidence_dir"
+evidence_file="$evidence_dir/$evidence_tag.log"
+[[ ! -e "$evidence_file" ]] || {
+    print -u2 "Evidence file already exists: $evidence_file"
+    exit 2
+}
+exec > >(/usr/bin/tee "$evidence_file") 2>&1
+
+print "M2 live gate evidence v1"
+print "action=$action"
+print "timestamp=$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ')"
+print "boot=$(/usr/sbin/sysctl -n kern.boottime)"
+print "macOS=$(/usr/bin/sw_vers -productVersion) ($(/usr/bin/sw_vers -buildVersion))"
+print "repository_commit=$(git -C "$repo_dir" rev-parse HEAD)"
+print "app_path=$app_dir"
+print "evidence_file=$evidence_file"
 
 if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -47,8 +74,30 @@ preflight() {
 
     xcrun stapler validate "$app_dir"
     /usr/sbin/spctl --assess --type execute --verbose=4 "$app_dir"
+    print "app_protocol_version=$("$app_executable" --m2-protocol-version)"
+    print "daemon_sha256=$(/usr/bin/shasum -a 256 "$daemon_executable" | /usr/bin/awk '{print $1}')"
+    /usr/bin/codesign -dvvv "$daemon_executable" 2>&1 \
+        | /usr/bin/grep -E '^(Identifier|TeamIdentifier|CDHash)='
     print "PASS: notarized live artifacts; Team ID $app_team"
     "$app_executable" --m2-daemon-status
+}
+
+verify_daemon() {
+    status_output="$("$app_executable" --m2-daemon-status)"
+    [[ "$status_output" == Enabled* ]] || {
+        print -u2 "M2 daemon is not enabled: $status_output"
+        exit 1
+    }
+    built_version="$("$app_executable" --m2-protocol-version)"
+    expected_version="${LIDSWITCH_M2_EXPECTED_VERSION:-$built_version}"
+    version_output="$("$app_executable" --m2-check-version)"
+    [[ "$version_output" == "$expected_version;euid=0" ]] || {
+        print -u2 "Unexpected authorized reply: $version_output; expected $expected_version;euid=0"
+        exit 1
+    }
+    "$probe_executable"
+    print "authorized_reply=$version_output"
+    print "PASS: enabled, authorized client received root reply, wrong-identifier client rejected"
 }
 
 require_confirmation() {
@@ -77,18 +126,43 @@ case "$action" in
         ;;
     verify)
         preflight
-        status_output="$("$app_executable" --m2-daemon-status)"
-        [[ "$status_output" == Enabled* ]] || {
-            print -u2 "M2 daemon is not enabled: $status_output"
+        verify_daemon
+        ;;
+    snapshot-update-baseline)
+        preflight
+        verify_daemon
+        [[ ! -e "$update_state_dir" ]] || {
+            print -u2 "Update baseline already exists; choose another LIDSWITCH_M2_UPDATE_ID"
+            exit 2
+        }
+        mkdir -p "$update_state_dir"
+        "$app_executable" --m2-protocol-version >"$update_state_dir/protocol-version"
+        /usr/bin/shasum -a 256 "$daemon_executable" \
+            | /usr/bin/awk '{print $1}' >"$update_state_dir/daemon-sha256"
+        print "PASS: update baseline recorded in $update_state_dir"
+        ;;
+    verify-update)
+        preflight
+        [[ -f "$update_state_dir/protocol-version" && -f "$update_state_dir/daemon-sha256" ]] || {
+            print -u2 "Update baseline is missing; run snapshot-update-baseline on v1 first"
+            exit 2
+        }
+        baseline_version="$(<"$update_state_dir/protocol-version")"
+        baseline_hash="$(<"$update_state_dir/daemon-sha256")"
+        current_version="$("$app_executable" --m2-protocol-version)"
+        current_hash="$(/usr/bin/shasum -a 256 "$daemon_executable" | /usr/bin/awk '{print $1}')"
+        [[ "$current_version" != "$baseline_version" ]] || {
+            print -u2 "Protocol version did not change: $current_version"
             exit 1
         }
-        version_output="$("$app_executable" --m2-check-version)"
-        [[ "$version_output" == "m2-spike-v1;euid=0" ]] || {
-            print -u2 "Unexpected authorized reply: $version_output"
+        [[ "$current_hash" != "$baseline_hash" ]] || {
+            print -u2 "Daemon executable hash did not change"
             exit 1
         }
-        "$probe_executable"
-        print "PASS: enabled, authorized client received root reply, wrong-identifier client rejected"
+        print "baseline_protocol_version=$baseline_version"
+        print "baseline_daemon_sha256=$baseline_hash"
+        verify_daemon
+        print "PASS: updated daemon version and executable are active after re-registration"
         ;;
     unregister)
         require_confirmation
@@ -110,7 +184,7 @@ case "$action" in
         print "PASS: M2 daemon unregistered"
         ;;
     *)
-        print -u2 "Usage: $0 {preflight|register|verify|unregister} [--confirm-system-changes]"
+        print -u2 "Usage: $0 {preflight|register|verify|snapshot-update-baseline|verify-update|unregister} [--confirm-system-changes]"
         exit 2
         ;;
 esac

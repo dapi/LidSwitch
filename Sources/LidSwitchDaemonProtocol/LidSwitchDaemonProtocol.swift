@@ -10,7 +10,11 @@ public enum LidSwitchDaemonConstants {
     public static let daemonIdentifier = "me.dapi.LidSwitch.Daemon"
     public static let machServiceName = "me.dapi.LidSwitch.Daemon.XPC"
     public static let plistName = "me.dapi.LidSwitch.Daemon.plist"
+    #if LIDSWITCH_M2_PROTOCOL_V2
+    public static let protocolVersion = "m2-spike-v2"
+    #else
     public static let protocolVersion = "m2-spike-v1"
+    #endif
 }
 
 public struct PeerCodeSigningRequirement: Sendable {
@@ -20,21 +24,28 @@ public struct PeerCodeSigningRequirement: Sendable {
     public var isProductionGrade: Bool { teamIdentifier != nil }
 
     public static func forPeer(identifier: String) -> PeerCodeSigningRequirement {
-        let escapedIdentifier = escapeRequirementLiteral(identifier)
-        guard let teamIdentifier = currentTeamIdentifier() else {
+        forPeer(identifier: identifier, teamIdentifier: currentTeamIdentifier())
+    }
+
+    package static func forPeer(
+        identifier: String,
+        teamIdentifier: String?
+    ) -> PeerCodeSigningRequirement {
+        let checkedIdentifier = checkedRequirementLiteral(identifier)
+        guard let teamIdentifier, !teamIdentifier.isEmpty else {
             // Ad-hoc signatures have no Team ID. This fallback is useful for
             // local protocol tests, but another ad-hoc binary can claim the
             // same identifier, so callers must not treat it as production auth.
             return PeerCodeSigningRequirement(
-                value: "identifier \"\(escapedIdentifier)\"",
+                value: "identifier \"\(checkedIdentifier)\"",
                 teamIdentifier: nil
             )
         }
 
-        let escapedTeamIdentifier = escapeRequirementLiteral(teamIdentifier)
+        let checkedTeamIdentifier = checkedRequirementLiteral(teamIdentifier)
         return PeerCodeSigningRequirement(
-            value: "anchor apple generic and identifier \"\(escapedIdentifier)\" "
-                + "and certificate leaf[subject.OU] = \"\(escapedTeamIdentifier)\"",
+            value: "anchor apple generic and identifier \"\(checkedIdentifier)\" "
+                + "and certificate leaf[subject.OU] = \"\(checkedTeamIdentifier)\"",
             teamIdentifier: teamIdentifier
         )
     }
@@ -66,9 +77,12 @@ public struct PeerCodeSigningRequirement: Sendable {
         return teamIdentifier
     }
 
-    private static func escapeRequirementLiteral(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+    private static func checkedRequirementLiteral(_ value: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+        precondition(
+            !value.isEmpty && value.unicodeScalars.allSatisfy(allowed.contains),
+            "Invalid code-signing requirement literal"
+        )
+        return value
     }
 }

@@ -9,6 +9,8 @@ daemon_plist="$app_dir/Contents/Library/LaunchDaemons/me.dapi.LidSwitch.Daemon.p
 "$repo_dir/Scripts/build-app.sh" "$configuration" >/dev/null
 swift build --package-path "$repo_dir" -c "$configuration" \
     --product LidSwitchCoreChecks >/dev/null
+swift build --package-path "$repo_dir" -c "$configuration" \
+    --product LidSwitchDaemonProtocolChecks >/dev/null
 
 /usr/bin/plutil -lint "$daemon_plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :Label' "$daemon_plist")" == "me.dapi.LidSwitch.Daemon" ]]
@@ -45,8 +47,14 @@ fi
 
 status_output="$($app_dir/Contents/MacOS/LidSwitch --m2-daemon-status)"
 [[ "$status_output" == *"auth:"* ]]
+protocol_version="$($app_dir/Contents/MacOS/LidSwitch --m2-protocol-version)"
+case "${LIDSWITCH_M2_PROTOCOL_VARIANT:-v1}" in
+    v1) [[ "$protocol_version" == "m2-spike-v1" ]] ;;
+    v2) [[ "$protocol_version" == "m2-spike-v2" ]] ;;
+esac
 
 "$repo_dir/.build/$configuration/LidSwitchCoreChecks"
+"$repo_dir/.build/$configuration/LidSwitchDaemonProtocolChecks"
 
 print "PASS: M2 bundle layout, launchd plist, signatures, peer identity checks, status path, and existing core checks"
 print "Status: $status_output"

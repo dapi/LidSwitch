@@ -41,6 +41,11 @@ let package = Package(
             name: "LidSwitchCoreChecks",
             dependencies: ["LidSwitchCore"],
             path: "Tests/LidSwitchCoreChecks"
+        ),
+        .executableTarget(
+            name: "LidSwitchDaemonProtocolChecks",
+            dependencies: ["LidSwitchDaemonProtocol"],
+            path: "Tests/LidSwitchDaemonProtocolChecks"
         )
     ],
     swiftLanguageModes: [.v5]

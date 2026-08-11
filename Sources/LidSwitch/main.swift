@@ -1,6 +1,7 @@
 import AppKit
 import IOKit
 import LidSwitchCore
+import LidSwitchDaemonProtocol
 
 final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -368,7 +369,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 self.updateM2DaemonUI()
                 switch result {
                 case .success(let response):
-                    let isExpected = response.contains("m2-spike-v1") && response.contains("euid=0")
+                    let expected = "\(LidSwitchDaemonConstants.protocolVersion);euid=0"
+                    let isExpected = response == expected
                     if isExpected {
                         self.showConfirmation("M2 daemon replied: \(response)")
                     } else {
@@ -549,6 +551,7 @@ private func runM2CommandLineModeIfRequested() {
     let arguments = CommandLine.arguments.dropFirst()
     let supportedArguments = [
         "--m2-daemon-status",
+        "--m2-protocol-version",
         "--m2-check-version",
         "--m2-register",
         "--m2-unregister",
@@ -559,6 +562,11 @@ private func runM2CommandLineModeIfRequested() {
     }
 
     let manager = ServiceManagedDaemonManager()
+    if arguments.contains("--m2-protocol-version") {
+        print(LidSwitchDaemonConstants.protocolVersion)
+        exit(0)
+    }
+
     if arguments.contains("--m2-daemon-status") {
         print("\(manager.status.rawValue); auth: \(manager.peerAuthenticationDescription); bundle: \(Bundle.main.bundlePath)")
         exit(0)
@@ -590,7 +598,8 @@ private func runM2CommandLineModeIfRequested() {
         switch result {
         case .success(let response):
             print(response)
-            exitCode = response.contains("m2-spike-v1") && response.contains("euid=0") ? 0 : 1
+            let expected = "\(LidSwitchDaemonConstants.protocolVersion);euid=0"
+            exitCode = response == expected ? 0 : 1
         case .failure(let error):
             fputs(error.localizedDescription + "\n", stderr)
             exitCode = 1
