@@ -1,4 +1,5 @@
 import AppKit
+import LidSwitchCore
 
 struct HoverStatusModel {
     let keepsWorking: Bool?

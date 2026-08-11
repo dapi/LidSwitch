@@ -129,6 +129,9 @@ GPU.
 swift run LidSwitchCoreChecks
 ```
 
+Автоматизированное покрытие и матрица ручных проверок для Apple silicon и
+macOS 15+ описаны в [QA.md](QA.md).
+
 Чтобы локально собрать архив для релиза:
 
 ```sh

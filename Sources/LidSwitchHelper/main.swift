@@ -1,4 +1,5 @@
 import Foundation
+import LidSwitchCore
 
 enum HelperError: Error, LocalizedError {
     case invalidArguments
@@ -15,35 +16,16 @@ enum HelperError: Error, LocalizedError {
 }
 
 do {
-    guard CommandLine.arguments.count == 2 else { throw HelperError.invalidArguments }
-
-    switch CommandLine.arguments[1] {
-    case "check-v3":
-        break
-    case "enable-closed-lid-work":
-        try setSleepDisabled(true)
-    case "disable-closed-lid-work":
-        try setSleepDisabled(false)
-    case "set-energy-low":
-        try setEnergyMode(0)
-    case "set-energy-automatic":
-        try setEnergyMode(1)
-    case "set-energy-high":
-        try setEnergyMode(2)
-    default:
+    guard CommandLine.arguments.count == 2,
+          let operation = PrivilegedHelperOperation(rawValue: CommandLine.arguments[1]) else {
         throw HelperError.invalidArguments
+    }
+    if let arguments = operation.pmsetArguments {
+        try runPmset(arguments: arguments)
     }
 } catch {
     fputs("LidSwitchHelper: \(error.localizedDescription)\n", stderr)
     exit(1)
-}
-
-private func setEnergyMode(_ mode: Int) throws {
-    try runPmset(arguments: ["-a", "powermode", String(mode)])
-}
-
-private func setSleepDisabled(_ disabled: Bool) throws {
-    try runPmset(arguments: ["-a", "disablesleep", disabled ? "1" : "0"])
 }
 
 private func runPmset(arguments: [String]) throws {

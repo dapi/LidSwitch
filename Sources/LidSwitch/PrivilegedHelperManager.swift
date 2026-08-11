@@ -14,7 +14,7 @@ struct PrivilegedHelperManager {
         guard FileManager.default.isExecutableFile(atPath: Self.installedHelperPath) else {
             return false
         }
-        return run(arguments: ["-n", Self.installedHelperPath, "check-v3"]).exitCode == 0
+        return run(arguments: ["-n", Self.installedHelperPath, PrivilegedHelperOperation.check.rawValue]).exitCode == 0
     }
 
     func install() throws {
@@ -66,8 +66,10 @@ struct PrivilegedHelperManager {
     }
 
     func setKeepsWorkingWithLidClosed(_ shouldKeepWorking: Bool) throws {
-        let action = shouldKeepWorking ? "enable-closed-lid-work" : "disable-closed-lid-work"
-        let result = run(arguments: ["-n", Self.installedHelperPath, action])
+        let operation: PrivilegedHelperOperation = shouldKeepWorking
+            ? .enableClosedLidWork
+            : .disableClosedLidWork
+        let result = run(arguments: ["-n", Self.installedHelperPath, operation.rawValue])
         guard result.exitCode == 0 else {
             let message = String(decoding: result.error, as: UTF8.self)
             throw managerError(message.isEmpty ? "The privileged helper failed." : message)
@@ -75,13 +77,11 @@ struct PrivilegedHelperManager {
     }
 
     func setEnergyMode(_ mode: EnergyMode) throws {
-        let action: String
-        switch mode {
-        case .lowPower: action = "set-energy-low"
-        case .automatic: action = "set-energy-automatic"
-        case .highPower: action = "set-energy-high"
-        }
-        let result = run(arguments: ["-n", Self.installedHelperPath, action])
+        let result = run(arguments: [
+            "-n",
+            Self.installedHelperPath,
+            PrivilegedHelperOperation.energyMode(mode).rawValue
+        ])
         guard result.exitCode == 0 else {
             let message = String(decoding: result.error, as: UTF8.self)
             throw managerError(message.isEmpty ? "The privileged helper failed." : message)

@@ -10,20 +10,12 @@ struct BatterySnapshot {
     let forecastSource: ClosedLidForecastSource
 }
 
-enum ClosedLidForecastSource {
-    case measuredClosed
-    case modeledDisplayOff
-    case learnedOnAC
-    case baselineOnAC(watts: Int)
-}
-
 final class ClosedLidForecastController {
     var didUpdate: ((BatterySnapshot, ActiveClosedLidEstimate?) -> Void)?
 
-    private var powerSamples: [Double] = []
+    private var engine = ClosedLidForecastEngine()
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
-    private var previousClamshellState: Bool?
 
     func start() {
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -34,7 +26,7 @@ final class ClosedLidForecastController {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.powerSamples.removeAll()
+            self?.engine.reset()
             self?.sampleAndPublish()
         }
         sampleAndPublish()
@@ -49,87 +41,29 @@ final class ClosedLidForecastController {
 
     private func sampleAndPublish() {
         guard let measurement = readPowerMeasurement() else { return }
-
-        guard measurement.isOnBattery else {
-            powerSamples.removeAll()
-            let energyMode = readEnergyMode() ?? .automatic
-            let learnedWatts = UserDefaults.standard.double(forKey: learnedWattsKey(for: energyMode))
-            let hasLearnedWatts = learnedWatts >= 2 && learnedWatts <= 150
-            let baselineWatts = baselineWatts(for: energyMode)
-            let predictedWatts = hasLearnedWatts ? learnedWatts : baselineWatts
-            let estimate = ActiveClosedLidEstimator.estimate(
-                remainingEnergyWh: measurement.remainingEnergyWh,
-                measuredSystemWatts: predictedWatts,
-                displayBrightness: 0,
-                isClamshellClosed: true
-            )
-            didUpdate?(
-                BatterySnapshot(
-                    isOnBattery: false,
-                    chargePercent: measurement.chargePercent,
-                    forecastSource: hasLearnedWatts
-                        ? .learnedOnAC
-                        : .baselineOnAC(watts: Int(baselineWatts))
-                ),
-                estimate
-            )
-            return
-        }
-
-        if previousClamshellState != measurement.isClamshellClosed {
-            powerSamples.removeAll()
-            previousClamshellState = measurement.isClamshellClosed
-        }
-
-        if measurement.systemWatts >= 0.5, measurement.systemWatts <= 150 {
-            powerSamples.append(measurement.systemWatts)
-            if powerSamples.count > 18 {
-                powerSamples.removeFirst(powerSamples.count - 18)
-            }
-        }
-
-        guard let medianWatts = median(powerSamples) else {
-            didUpdate?(
-                BatterySnapshot(
-                    isOnBattery: true,
-                    chargePercent: measurement.chargePercent,
-                    forecastSource: .modeledDisplayOff
-                ),
-                nil
-            )
-            return
-        }
-
-        let estimate = ActiveClosedLidEstimator.estimate(
-            remainingEnergyWh: measurement.remainingEnergyWh,
-            measuredSystemWatts: medianWatts,
-            displayBrightness: measurement.displayBrightness,
-            isClamshellClosed: measurement.isClamshellClosed
+        let energyMode = readEnergyMode() ?? .automatic
+        let learnedWatts = UserDefaults.standard.object(forKey: learnedWattsKey(for: energyMode)) == nil
+            ? nil
+            : UserDefaults.standard.double(forKey: learnedWattsKey(for: energyMode))
+        let result = engine.forecast(
+            measurement: measurement,
+            energyMode: energyMode,
+            learnedWatts: learnedWatts
         )
-        if let estimate {
-            let energyMode = readEnergyMode() ?? .automatic
-            UserDefaults.standard.set(estimate.predictedWatts, forKey: learnedWattsKey(for: energyMode))
+        if let learnedWattsToPersist = result.learnedWattsToPersist {
+            UserDefaults.standard.set(learnedWattsToPersist, forKey: learnedWattsKey(for: energyMode))
         }
         didUpdate?(
             BatterySnapshot(
-                isOnBattery: true,
+                isOnBattery: measurement.isOnBattery,
                 chargePercent: measurement.chargePercent,
-                forecastSource: measurement.isClamshellClosed ? .measuredClosed : .modeledDisplayOff
+                forecastSource: result.source
             ),
-            estimate
+            result.estimate
         )
     }
 
-    private struct PowerMeasurement {
-        let isOnBattery: Bool
-        let chargePercent: Double
-        let remainingEnergyWh: Double
-        let systemWatts: Double
-        let displayBrightness: Double
-        let isClamshellClosed: Bool
-    }
-
-    private func readPowerMeasurement() -> PowerMeasurement? {
+    private func readPowerMeasurement() -> ClosedLidPowerMeasurement? {
         let battery = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         guard battery != 0 else { return nil }
         defer { IOObjectRelease(battery) }
@@ -146,7 +80,7 @@ final class ClosedLidForecastController {
         let remainingEnergyWh = rawCapacityMAh * 11.55 / 1000
         let systemWatts = abs(amperageMA) * voltageMV / 1_000_000
 
-        return PowerMeasurement(
+        return ClosedLidPowerMeasurement(
             isOnBattery: !isExternalConnected,
             chargePercent: chargePercent,
             remainingEnergyWh: remainingEnergyWh,
@@ -189,16 +123,6 @@ final class ClosedLidForecastController {
         return bool(value) ?? false
     }
 
-    private func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        let sorted = values.sorted()
-        let middle = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[middle - 1] + sorted[middle]) / 2
-        }
-        return sorted[middle]
-    }
-
     private func readEnergyMode() -> EnergyMode? {
         let process = Process()
         let output = Pipe()
@@ -221,14 +145,6 @@ final class ClosedLidForecastController {
 
     private func learnedWattsKey(for mode: EnergyMode) -> String {
         "lastPredictedClosedLidWatts.mode.\(mode.rawValue)"
-    }
-
-    private func baselineWatts(for mode: EnergyMode) -> Double {
-        switch mode {
-        case .lowPower: return 6
-        case .automatic: return 8
-        case .highPower: return 12
-        }
     }
 
     private func number(_ value: Any?) -> Double? {

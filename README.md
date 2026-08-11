@@ -124,6 +124,9 @@ run that root-owned helper without another password prompt.
 swift run LidSwitchCoreChecks
 ```
 
+See [QA.md](QA.md) for the automated coverage and the Apple silicon/macOS 15+
+manual test matrix.
+
 Create a release archive locally with:
 
 ```sh
