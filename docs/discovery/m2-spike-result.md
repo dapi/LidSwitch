@@ -122,35 +122,67 @@ bundle-ID-only ad-hoc signature можно подделать другой ad-ho
 
 ## Live lifecycle gate
 
-Нужен Mac с установленным Developer ID Application certificate и настроенным
-`notarytool` profile.
+Нужны полный Xcode (для `stapler`), установленный Developer ID Application
+certificate и настроенный `notarytool` profile. Credential сохраняется в
+Keychain интерактивно и не передается build scripts:
 
-1. Собрать с hardened runtime:
+```sh
+xcrun notarytool store-credentials LidSwitch
+```
+
+1. Собрать, notarize, staple, проверить Gatekeeper и создать финальный archive:
 
    ```sh
    LIDSWITCH_CODESIGN_IDENTITY="Developer ID Application: …" \
-     ./Scripts/build-app.sh release
+   LIDSWITCH_NOTARY_PROFILE="LidSwitch" \
+     ./Scripts/notarize-release.sh
    ```
 
-2. Notarize и staple app, затем поместить его в `/Applications`.
-3. Открыть LidSwitch → `M2 daemon spike` → Register, разрешить background item
-   с admin authentication.
-4. Проверить authorized path:
+   Ответ notarization сохраняется локально в
+   `dist/notarization/submission.plist`. Скрипт останавливается до upload, если
+   identity/profile/full Xcode отсутствуют, и не использует `--force`.
+
+2. Переместить stapled `dist/LidSwitch.app` в `/Applications`, затем проверить
+   artifacts без изменения Service Management state:
 
    ```sh
-   /Applications/LidSwitch.app/Contents/MacOS/LidSwitch --m2-check-version
-   # expected: m2-spike-v1;euid=0
+   ./Scripts/m2-live-gate.sh preflight
    ```
 
-5. Запустить уже подписанный build script тем же Team ID
-   `.build/release/LidSwitchUnauthorizedProbe`; он имеет identifier
-   `me.dapi.LidSwitch.UnauthorizedProbe`, должен завершиться `PASS` и не получить
-   reply.
-6. Заменить daemon executable новой подписанной версией, выполнить
+3. Зарегистрировать daemon. Флаг намеренно подтверждает изменение системного
+   Service Management state:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh register --confirm-system-changes
+   ```
+
+   Если status — `Requires approval`, скрипт откроет Login Items. Разрешить
+   LidSwitch с admin authentication.
+
+4. Проверить authorized root reply и rejection same-Team/wrong-identifier
+   probe одной командой:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh verify
+   ```
+
+   Success требует точный authorized reply `m2-spike-v1;euid=0`; probe с
+   identifier `me.dapi.LidSwitch.UnauthorizedProbe` должен получить явный
+   rejection. Preflight также требует одинаковый production Team ID у app,
+   daemon и probe.
+
+5. Заменить daemon executable новой подписанной версией, выполнить
    unregister/register и подтвердить новый reply без повторного расширения
    полномочий.
-7. Unregister из меню; `sudo launchctl list me.dapi.LidSwitch.Daemon` должен
-   сообщить, что service отсутствует. Legacy helper должен продолжить работать.
+6. После reboot снова выполнить `verify`.
+7. Завершить lifecycle gate:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh unregister --confirm-system-changes
+   ```
+
+   Status должен стать `Not registered`. Legacy helper должен продолжить
+   работать.
 
 ## Gate и решение
 

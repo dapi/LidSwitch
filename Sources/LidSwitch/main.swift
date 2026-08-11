@@ -547,7 +547,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
 private func runM2CommandLineModeIfRequested() {
     let arguments = CommandLine.arguments.dropFirst()
-    guard arguments.contains("--m2-daemon-status") || arguments.contains("--m2-check-version") else {
+    let supportedArguments = [
+        "--m2-daemon-status",
+        "--m2-check-version",
+        "--m2-register",
+        "--m2-unregister",
+        "--m2-open-approval-settings"
+    ]
+    guard supportedArguments.contains(where: arguments.contains) else {
         return
     }
 
@@ -555,6 +562,26 @@ private func runM2CommandLineModeIfRequested() {
     if arguments.contains("--m2-daemon-status") {
         print("\(manager.status.rawValue); auth: \(manager.peerAuthenticationDescription); bundle: \(Bundle.main.bundlePath)")
         exit(0)
+    }
+
+    if arguments.contains("--m2-open-approval-settings") {
+        manager.openApprovalSettings()
+        exit(0)
+    }
+
+    if arguments.contains("--m2-register") || arguments.contains("--m2-unregister") {
+        do {
+            if arguments.contains("--m2-register") {
+                try manager.register()
+            } else {
+                try manager.unregister()
+            }
+            print(manager.status.rawValue)
+            exit(0)
+        } catch {
+            fputs(error.localizedDescription + "\n", stderr)
+            exit(1)
+        }
     }
 
     let semaphore = DispatchSemaphore(value: 0)
