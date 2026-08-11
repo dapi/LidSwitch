@@ -236,9 +236,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func updateForecastUI() {
         let stateDescription: String
         switch keepsWorkingWithLidClosed {
-        case true: stateDescription = "keeps working with lid closed — click to allow sleep"
-        case false: stateDescription = "sleeps when lid closes — click to keep working"
-        case nil: stateDescription = "closed-lid state unknown"
+        case true: stateDescription = "🟢 Зелёный: Mac продолжит работать с закрытой крышкой"
+        case false: stateDescription = "🟡 Жёлтый: Mac уснёт при закрытии крышки"
+        case nil: stateDescription = "⚪️ Серый: состояние режима пока неизвестно"
         }
 
         guard let batterySnapshot else {
@@ -248,7 +248,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: nil
             )
-            statusItem.button?.toolTip = "LidSwitch: measuring power use; \(stateDescription)"
+            statusItem.button?.toolTip = "\(stateDescription)\nЦифра появится после первого замера энергопотребления\nНажмите, чтобы переключить режим"
             return
         }
 
@@ -256,24 +256,24 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         if let closedLidEstimate {
             let basis: String
             switch batterySnapshot.forecastSource {
-            case .measuredClosed: basis = "measured closed"
-            case .modeledDisplayOff: basis = "modeled display off"
-            case .learnedOnAC: basis = "last battery usage"
-            case .baselineOnAC: basis = "baseline until learned"
+            case .measuredClosed: basis = "расход измерен с закрытой крышкой"
+            case .modeledDisplayOff: basis = "текущий расход без энергопотребления экрана"
+            case .learnedOnAC: basis = "последний расход, изученный при работе от батареи"
+            case .baselineOnAC: basis = "предварительная модель 8 Вт, пока нет истории"
             }
             forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: closedLidEstimate.hours
             )
-            statusItem.button?.toolTip = "LidSwitch: ≈ \(closedLidEstimate.hours) h; \(stateDescription)"
+            statusItem.button?.toolTip = "\(stateDescription)\n≈ \(closedLidEstimate.hours) ч — прогноз работы от батареи с закрытой крышкой\nРасчёт: \(basis)\nНажмите, чтобы переключить режим"
         } else {
             forecastItem.title = "Closed-lid estimate: learning…"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: nil
             )
-            statusItem.button?.toolTip = "LidSwitch: measuring active power use; \(stateDescription)"
+            statusItem.button?.toolTip = "\(stateDescription)\nПрогноз времени: изучаю энергопотребление…\nНажмите, чтобы переключить режим"
         }
     }
 
