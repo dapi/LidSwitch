@@ -56,7 +56,7 @@ LidSwitch refuses to overwrite unknown values.
 
 During one-time setup, LidSwitch installs the helper at
 `/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` and validates a narrow
-rule in `/etc/sudoers.d/me.dapi.LidSwitch`. The rule permits only the current
+rule in `/etc/sudoers.d/lidswitch`. The rule permits only the current
 account to run that root-owned helper without another password prompt.
 
 Apple documentation:

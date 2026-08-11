@@ -3,7 +3,9 @@ import Foundation
 
 struct PrivilegedHelperManager {
     static let installedHelperPath = "/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper"
-    static let sudoersPath = "/etc/sudoers.d/me.dapi.LidSwitch"
+    // sudo ignores files in an @includedir when their names contain a dot.
+    static let sudoersPath = "/etc/sudoers.d/lidswitch"
+    static let legacySudoersPath = "/etc/sudoers.d/me.dapi.LidSwitch"
 
     var isInstalled: Bool {
         guard FileManager.default.isExecutableFile(atPath: Self.installedHelperPath) else {
@@ -40,7 +42,8 @@ struct PrivilegedHelperManager {
             "/usr/sbin/chown root:wheel \(shellQuote(temporarySudoersPath))",
             "/bin/chmod 440 \(shellQuote(temporarySudoersPath))",
             "/usr/sbin/visudo -cf \(shellQuote(temporarySudoersPath))",
-            "/bin/mv -f \(shellQuote(temporarySudoersPath)) \(shellQuote(Self.sudoersPath))"
+            "/bin/mv -f \(shellQuote(temporarySudoersPath)) \(shellQuote(Self.sudoersPath))",
+            "/bin/rm -f \(shellQuote(Self.legacySudoersPath))"
         ]
 
         try runWithAdministratorPrivileges(commands.joined(separator: " && "))
@@ -50,7 +53,12 @@ struct PrivilegedHelperManager {
     }
 
     func uninstall() throws {
-        let command = "/bin/rm -f \(shellQuote(Self.sudoersPath)) \(shellQuote(Self.installedHelperPath))"
+        let command = [
+            "/bin/rm -f",
+            shellQuote(Self.sudoersPath),
+            shellQuote(Self.legacySudoersPath),
+            shellQuote(Self.installedHelperPath)
+        ].joined(separator: " ")
         try runWithAdministratorPrivileges(command)
     }
 
@@ -117,4 +125,3 @@ struct PrivilegedHelperManager {
         )
     }
 }
-
