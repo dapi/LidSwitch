@@ -2,6 +2,14 @@ import AppKit
 
 enum StatusIconRenderer {
     static func image(forecastHours: Int?) -> NSImage {
+        image(text: forecastHours.map { String(min(999, max(0, $0))) })
+    }
+
+    static func confirmationImage(startsWhenLidOpens: Bool) -> NSImage {
+        image(text: startsWhenLidOpens ? "✓" : "×")
+    }
+
+    private static func image(text: String?) -> NSImage {
         let size = NSSize(width: 22, height: 18)
         let image = NSImage(size: size, flipped: false) { bounds in
             NSColor.labelColor.setStroke()
@@ -21,8 +29,7 @@ enum StatusIconRenderer {
             base.lineCapStyle = .round
             base.stroke()
 
-            if let forecastHours {
-                let text = String(min(999, max(0, forecastHours)))
+            if let text {
                 let fontSize: CGFloat = text.count <= 2 ? 8 : 6.5
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.alignment = .center
@@ -43,4 +50,3 @@ enum StatusIconRenderer {
         return image
     }
 }
-

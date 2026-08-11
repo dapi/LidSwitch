@@ -29,7 +29,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             button.image = StatusIconRenderer.image(forecastHours: nil)
             button.target = self
             button.action = #selector(statusItemClicked(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         }
 
         toggleItem.target = self
@@ -82,7 +82,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        if NSApp.currentEvent?.type == .rightMouseDown {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY), in: sender)
         } else {
             toggleLidStartup()
@@ -120,12 +120,27 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
             // The root-owned helper independently derives the exact command
             // from the requested state and the current NVRAM value.
-            try helperManager.setStartsWhenLidOpens(!currentState)
+            let newState = !currentState
+            try helperManager.setStartsWhenLidOpens(newState)
             refresh()
+            showToggleConfirmation(startsWhenLidOpens: newState)
         } catch let error as NSError where error.code == -128 {
             // The user cancelled the one-time administrator prompt.
         } catch {
             showError(title: "Couldn’t update the setting", message: error.localizedDescription)
+        }
+    }
+
+    private func showToggleConfirmation(startsWhenLidOpens: Bool) {
+        statusItem.button?.image = StatusIconRenderer.confirmationImage(
+            startsWhenLidOpens: startsWhenLidOpens
+        )
+        statusItem.button?.toolTip = startsWhenLidOpens
+            ? "LidSwitch: lid startup enabled"
+            : "LidSwitch: lid startup disabled"
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.updateForecastUI()
         }
     }
 
