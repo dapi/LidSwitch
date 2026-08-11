@@ -137,8 +137,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             startsWhenLidOpens: startsWhenLidOpens
         )
         statusItem.button?.toolTip = startsWhenLidOpens
-            ? "LidSwitch: lid startup enabled"
-            : "LidSwitch: lid startup disabled"
+            ? "LidSwitch: power-on from shutdown enabled"
+            : "LidSwitch: power-on from shutdown disabled"
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             self?.updateForecastUI()
@@ -198,20 +198,20 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func updateUI() {
         switch preference.startsWhenLidOpens {
         case true:
-            toggleItem.title = "Disable startup when lid opens"
+            toggleItem.title = "Disable power-on when lid opens"
             toggleItem.state = .on
             toggleItem.isEnabled = true
-            statusTextItem.title = "Current status: Enabled"
+            statusTextItem.title = "Power-on from shutdown: Enabled"
         case false:
-            toggleItem.title = "Enable startup when lid opens"
+            toggleItem.title = "Enable power-on when lid opens"
             toggleItem.state = .off
             toggleItem.isEnabled = true
-            statusTextItem.title = "Current status: Disabled"
+            statusTextItem.title = "Power-on from shutdown: Disabled"
         case nil:
-            toggleItem.title = "Startup when lid opens"
+            toggleItem.title = "Power-on when lid opens"
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
-            statusTextItem.title = "Current status: Unknown"
+            statusTextItem.title = "Power-on from shutdown: Unknown"
         }
 
         updateForecastUI()
@@ -227,11 +227,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         let startupDescription: String
         switch preference.startsWhenLidOpens {
         case true:
-            startupDescription = "lid startup is on — click to turn off"
+            startupDescription = "power-on from shutdown is on — click to turn off"
         case false:
-            startupDescription = "lid startup is off — click to turn on"
+            startupDescription = "power-on from shutdown is off — click to turn on"
         case nil:
-            startupDescription = "unknown lid startup setting"
+            startupDescription = "unknown power-on setting"
         }
 
         guard let batterySnapshot, batterySnapshot.isOnBattery else {

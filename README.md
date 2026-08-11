@@ -6,6 +6,10 @@ starts automatically when its lid is opened.
 It changes only lid-open behavior. If startup on power connection was already
 disabled, LidSwitch preserves that preference.
 
+This setting controls power-on from a fully shut-down state. It does not disable
+waking from sleep when the lid opens, and it does not put an already running Mac
+to sleep.
+
 While running on battery, the single menu bar icon shows an estimated number of
 hours the Mac can keep working actively with the lid closed and its built-in
 display off. The number is drawn inside the laptop screen, so the status item
