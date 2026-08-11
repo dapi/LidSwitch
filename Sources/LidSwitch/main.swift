@@ -12,6 +12,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     )
     private let statusTextItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
     private let forecastItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let energyModeHeader = NSMenuItem(title: "Режим энергии", action: nil, keyEquivalent: "")
+    private let lowPowerItem = NSMenuItem(title: "Энергосбережение", action: #selector(selectLowPowerMode), keyEquivalent: "")
+    private let automaticPowerItem = NSMenuItem(title: "Автоматически", action: #selector(selectAutomaticPowerMode), keyEquivalent: "")
+    private let highPowerItem = NSMenuItem(title: "Высокая производительность", action: #selector(selectHighPowerMode), keyEquivalent: "")
     private let helperAccessItem = NSMenuItem(
         title: "Set up passwordless switching…",
         action: #selector(manageHelperAccess),
@@ -20,6 +24,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let helperManager = PrivilegedHelperManager()
     private let forecastController = ClosedLidForecastController()
     private var keepsWorkingWithLidClosed: Bool?
+    private var energyMode: EnergyMode?
     private var batterySnapshot: BatterySnapshot?
     private var closedLidEstimate: ActiveClosedLidEstimate?
     private var confirmationPopover: NSPopover?
@@ -45,11 +50,20 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         toggleItem.target = self
         statusTextItem.isEnabled = false
         forecastItem.isEnabled = false
+        energyModeHeader.isEnabled = false
+        for item in [lowPowerItem, automaticPowerItem, highPowerItem] {
+            item.target = self
+        }
 
         menu.delegate = self
         menu.addItem(toggleItem)
         menu.addItem(statusTextItem)
         menu.addItem(forecastItem)
+        menu.addItem(.separator())
+        menu.addItem(energyModeHeader)
+        menu.addItem(lowPowerItem)
+        menu.addItem(automaticPowerItem)
+        menu.addItem(highPowerItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
@@ -83,6 +97,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func refresh() {
         keepsWorkingWithLidClosed = readSleepDisabled()
+        energyMode = readEnergyMode()
         updateUI()
     }
 
@@ -144,15 +159,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
 
         do {
-            if !helperManager.isInstalled {
-                let alert = NSAlert()
-                alert.messageText = "Set up passwordless switching?"
-                alert.informativeText = "macOS will ask for your administrator password once to install LidSwitch’s narrowly scoped helper. Future switches won’t ask again."
-                alert.addButton(withTitle: "Set Up")
-                alert.addButton(withTitle: "Cancel")
-                guard alert.runModal() == .alertFirstButtonReturn else { return }
-                try helperManager.install()
-            }
+            guard try ensureHelperInstalled() else { return }
 
             let newState = !currentState
             try helperManager.setKeepsWorkingWithLidClosed(newState)
@@ -165,7 +172,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 )
             }
             updateUI()
-            showToggleConfirmation(keepsWorking: newState)
+            showConfirmation(newState
+                ? "Mac will keep working when the lid is closed"
+                : "Mac will sleep when the lid is closed")
         } catch let error as NSError where error.code == -128 {
             // The user cancelled the one-time administrator prompt.
         } catch {
@@ -173,13 +182,63 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
-    private func showToggleConfirmation(keepsWorking: Bool) {
+    @objc private func selectLowPowerMode() {
+        selectEnergyMode(.lowPower)
+    }
+
+    @objc private func selectAutomaticPowerMode() {
+        selectEnergyMode(.automatic)
+    }
+
+    @objc private func selectHighPowerMode() {
+        selectEnergyMode(.highPower)
+    }
+
+    private func selectEnergyMode(_ mode: EnergyMode) {
+        guard energyMode != mode else { return }
+        do {
+            guard try ensureHelperInstalled() else { return }
+            try helperManager.setEnergyMode(mode)
+            energyMode = readEnergyMode()
+            guard energyMode == mode else {
+                throw NSError(
+                    domain: "LidSwitch.PowerManagement",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "macOS did not apply the requested energy mode."]
+                )
+            }
+            updateUI()
+            let title: String
+            switch mode {
+            case .lowPower: title = "Включён режим энергосбережения"
+            case .automatic: title = "Включён автоматический режим"
+            case .highPower: title = "Включена высокая производительность"
+            }
+            showConfirmation(title)
+        } catch let error as NSError where error.code == -128 {
+            // The user cancelled the one-time administrator prompt.
+        } catch {
+            showError(title: "Не удалось изменить режим энергии", message: error.localizedDescription)
+        }
+    }
+
+    private func ensureHelperInstalled() throws -> Bool {
+        guard !helperManager.isInstalled else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Set up passwordless switching?"
+        alert.informativeText = "macOS will ask for your administrator password once to install LidSwitch’s narrowly scoped helper. Future switches won’t ask again."
+        alert.addButton(withTitle: "Set Up")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        try helperManager.install()
+        return true
+    }
+
+    private func showConfirmation(_ message: String) {
         guard let button = statusItem.button else { return }
 
         confirmationPopover?.close()
-        let label = NSTextField(labelWithString: keepsWorking
-            ? "Mac will keep working when the lid is closed"
-            : "Mac will sleep when the lid is closed")
+        let label = NSTextField(labelWithString: message)
         label.font = .systemFont(ofSize: 13, weight: .medium)
         label.alignment = .center
         label.maximumNumberOfLines = 2
@@ -252,6 +311,26 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         return value.boolValue
     }
 
+    private func readEnergyMode() -> EnergyMode? {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["-g"]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return EnergyMode.parse(pmsetOutput: String(
+                decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            ))
+        } catch {
+            return nil
+        }
+    }
+
     private func updateUI() {
         switch keepsWorkingWithLidClosed {
         case true:
@@ -270,6 +349,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             toggleItem.isEnabled = false
             statusTextItem.title = "Closed-lid work: Unknown"
         }
+
+        lowPowerItem.state = energyMode == .lowPower ? .on : .off
+        automaticPowerItem.state = energyMode == .automatic ? .on : .off
+        highPowerItem.state = energyMode == .highPower ? .on : .off
 
         updateForecastUI()
         helperAccessItem.title = helperManager.isInstalled
@@ -296,7 +379,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             case .measuredClosed: basis = "расход измерен с закрытой крышкой"
             case .modeledDisplayOff: basis = "текущий расход без энергопотребления экрана"
             case .learnedOnAC: basis = "последний расход, изученный при работе от батареи"
-            case .baselineOnAC: basis = "предварительная модель 8 Вт, пока нет истории"
+            case .baselineOnAC(let watts): basis = "предварительная модель \(watts) Вт, пока нет истории"
             }
             forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
             statusItem.button?.image = StatusIconRenderer.image(

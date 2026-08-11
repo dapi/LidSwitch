@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import LidSwitchCore
 
 struct PrivilegedHelperManager {
     static let installedHelperPath = "/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper"
@@ -11,7 +12,7 @@ struct PrivilegedHelperManager {
         guard FileManager.default.isExecutableFile(atPath: Self.installedHelperPath) else {
             return false
         }
-        return run(arguments: ["-n", Self.installedHelperPath, "check-v2"]).exitCode == 0
+        return run(arguments: ["-n", Self.installedHelperPath, "check-v3"]).exitCode == 0
     }
 
     func install() throws {
@@ -64,6 +65,20 @@ struct PrivilegedHelperManager {
 
     func setKeepsWorkingWithLidClosed(_ shouldKeepWorking: Bool) throws {
         let action = shouldKeepWorking ? "enable-closed-lid-work" : "disable-closed-lid-work"
+        let result = run(arguments: ["-n", Self.installedHelperPath, action])
+        guard result.exitCode == 0 else {
+            let message = String(decoding: result.error, as: UTF8.self)
+            throw managerError(message.isEmpty ? "The privileged helper failed." : message)
+        }
+    }
+
+    func setEnergyMode(_ mode: EnergyMode) throws {
+        let action: String
+        switch mode {
+        case .lowPower: action = "set-energy-low"
+        case .automatic: action = "set-energy-automatic"
+        case .highPower: action = "set-energy-high"
+        }
         let result = run(arguments: ["-n", Self.installedHelperPath, action])
         guard result.exitCode == 0 else {
             let message = String(decoding: result.error, as: UTF8.self)

@@ -158,7 +158,7 @@ final class HoverStatusViewController: NSViewController {
         case .measuredClosed: return "Основа: измерение с закрытой крышкой"
         case .modeledDisplayOff: return "Основа: текущий расход без встроенного экрана"
         case .learnedOnAC: return "Основа: последний расход, изученный на батарее"
-        case .baselineOnAC: return "Основа: базовые 8 Вт · уточнится после работы от батареи"
+        case .baselineOnAC(let watts): return "Основа: базовые \(watts) Вт · уточнится после работы от батареи"
         case nil: return "Основа: ожидаю первый замер энергопотребления"
         }
     }

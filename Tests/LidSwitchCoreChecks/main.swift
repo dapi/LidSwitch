@@ -1,6 +1,11 @@
 import Foundation
 import LidSwitchCore
 
+check(EnergyMode.parse(pmsetOutput: " powermode            0\n") == .lowPower, "Should parse low power mode")
+check(EnergyMode.parse(pmsetOutput: " powermode            1\n") == .automatic, "Should parse automatic mode")
+check(EnergyMode.parse(pmsetOutput: " powermode            2\n") == .highPower, "Should parse high power mode")
+check(EnergyMode.parse(pmsetOutput: " sleep 1\n") == nil, "Should reject output without a power mode")
+
 let openLidEstimate = ActiveClosedLidEstimator.estimate(
     remainingEnergyWh: 60,
     measuredSystemWatts: 10,

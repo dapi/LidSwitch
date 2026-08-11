@@ -14,7 +14,7 @@ enum ClosedLidForecastSource {
     case measuredClosed
     case modeledDisplayOff
     case learnedOnAC
-    case baselineOnAC
+    case baselineOnAC(watts: Int)
 }
 
 final class ClosedLidForecastController {
@@ -24,7 +24,6 @@ final class ClosedLidForecastController {
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var previousClamshellState: Bool?
-    private let learnedWattsKey = "lastPredictedClosedLidWatts"
 
     func start() {
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -53,9 +52,11 @@ final class ClosedLidForecastController {
 
         guard measurement.isOnBattery else {
             powerSamples.removeAll()
-            let learnedWatts = UserDefaults.standard.double(forKey: learnedWattsKey)
+            let energyMode = readEnergyMode() ?? .automatic
+            let learnedWatts = UserDefaults.standard.double(forKey: learnedWattsKey(for: energyMode))
             let hasLearnedWatts = learnedWatts >= 2 && learnedWatts <= 150
-            let predictedWatts = hasLearnedWatts ? learnedWatts : 8
+            let baselineWatts = baselineWatts(for: energyMode)
+            let predictedWatts = hasLearnedWatts ? learnedWatts : baselineWatts
             let estimate = ActiveClosedLidEstimator.estimate(
                 remainingEnergyWh: measurement.remainingEnergyWh,
                 measuredSystemWatts: predictedWatts,
@@ -66,7 +67,9 @@ final class ClosedLidForecastController {
                 BatterySnapshot(
                     isOnBattery: false,
                     chargePercent: measurement.chargePercent,
-                    forecastSource: hasLearnedWatts ? .learnedOnAC : .baselineOnAC
+                    forecastSource: hasLearnedWatts
+                        ? .learnedOnAC
+                        : .baselineOnAC(watts: Int(baselineWatts))
                 ),
                 estimate
             )
@@ -104,7 +107,8 @@ final class ClosedLidForecastController {
             isClamshellClosed: measurement.isClamshellClosed
         )
         if let estimate {
-            UserDefaults.standard.set(estimate.predictedWatts, forKey: learnedWattsKey)
+            let energyMode = readEnergyMode() ?? .automatic
+            UserDefaults.standard.set(estimate.predictedWatts, forKey: learnedWattsKey(for: energyMode))
         }
         didUpdate?(
             BatterySnapshot(
@@ -193,6 +197,38 @@ final class ClosedLidForecastController {
             return (sorted[middle - 1] + sorted[middle]) / 2
         }
         return sorted[middle]
+    }
+
+    private func readEnergyMode() -> EnergyMode? {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["-g"]
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return EnergyMode.parse(pmsetOutput: String(
+                decoding: output.fileHandleForReading.readDataToEndOfFile(),
+                as: UTF8.self
+            ))
+        } catch {
+            return nil
+        }
+    }
+
+    private func learnedWattsKey(for mode: EnergyMode) -> String {
+        "lastPredictedClosedLidWatts.mode.\(mode.rawValue)"
+    }
+
+    private func baselineWatts(for mode: EnergyMode) -> Double {
+        switch mode {
+        case .lowPower: return 6
+        case .automatic: return 8
+        case .highPower: return 12
+        }
     }
 
     private func number(_ value: Any?) -> Double? {

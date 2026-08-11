@@ -11,10 +11,15 @@ Left-click the single laptop icon to switch the mode immediately:
 After each switch, a short popover confirms what the Mac will do. Right-click
 the icon to see the current state, refresh it, manage helper access, or quit.
 
+The right-click menu also switches macOS Energy Mode between Low Power,
+Automatic, and High Power. A checkmark shows the active mode. LidSwitch applies
+the selection to both battery and power-adapter profiles.
+
 The icon shows an estimated number of active hours with the lid closed, both on
 battery and on AC power. The number is drawn inside the laptop screen, so the
 menu bar item never grows wider. On AC, LidSwitch uses the last learned battery
-consumption; before it has learned one, it uses a conservative baseline model.
+consumption for the selected Energy Mode; before it has learned one, it uses a
+conservative baseline model.
 
 ## Requirements
 
@@ -44,11 +49,11 @@ helper. Subsequent switches do not ask for a password. An existing helper from
 LidSwitch 0.3.x is automatically detected as outdated and replaced during that
 one-time setup.
 
-The installed helper is owned by `root` and accepts only three fixed operations:
-check its version, enable closed-lid work, or disable closed-lid work. It does
-not accept arbitrary shell commands or power settings from the app. Right-click
-the icon and choose **Remove passwordless switching…** to remove it and its
-permission.
+The installed helper is owned by `root` and accepts only a fixed allowlist of
+operations: check its version, change closed-lid work, or select one of the
+three energy modes. It does not accept arbitrary shell commands or power
+settings from the app. Right-click the icon and choose **Remove passwordless
+switching…** to remove it and its permission.
 
 ## How it works
 
@@ -66,7 +71,8 @@ similar, so the number changes as CPU/GPU activity changes.
 On AC power, the battery reports no discharge rate. LidSwitch therefore stores
 the most recent predicted closed-lid wattage learned on battery and applies it
 to the current charge. Until the first battery measurement is available, it
-uses an 8 W active-work baseline and marks that basis in the menu.
+uses a mode-specific baseline: 6 W for Low Power, 8 W for Automatic, or 12 W
+for High Power. The menu identifies when a baseline is being used.
 
 During one-time setup, LidSwitch installs the helper at
 `/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` and validates a narrow
