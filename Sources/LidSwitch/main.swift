@@ -82,7 +82,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
-        if NSApp.currentEvent?.type == .rightMouseDown {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseDown || event?.modifierFlags.contains(.control) == true {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY), in: sender)
         } else {
             toggleLidStartup()
@@ -197,17 +198,20 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func updateUI() {
         switch preference.startsWhenLidOpens {
         case true:
+            toggleItem.title = "Disable startup when lid opens"
             toggleItem.state = .on
             toggleItem.isEnabled = true
-            statusTextItem.title = "Opening the lid starts this Mac"
+            statusTextItem.title = "Current status: Enabled"
         case false:
+            toggleItem.title = "Enable startup when lid opens"
             toggleItem.state = .off
             toggleItem.isEnabled = true
-            statusTextItem.title = "Opening the lid won’t start this Mac"
+            statusTextItem.title = "Current status: Disabled"
         case nil:
+            toggleItem.title = "Startup when lid opens"
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
-            statusTextItem.title = "Unknown system setting"
+            statusTextItem.title = "Current status: Unknown"
         }
 
         updateForecastUI()
