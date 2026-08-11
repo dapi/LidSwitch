@@ -23,6 +23,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var batterySnapshot: BatterySnapshot?
     private var closedLidEstimate: ActiveClosedLidEstimate?
     private var confirmationPopover: NSPopover?
+    private var hoverPopover: NSPopover?
+    private var hoverWorkItem: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -32,6 +34,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
+            button.addTrackingArea(NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self,
+                userInfo: nil
+            ))
         }
 
         toggleItem.target = self
@@ -79,12 +87,48 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        closeHoverPopover()
         let event = NSApp.currentEvent
         if event?.type == .rightMouseDown || event?.modifierFlags.contains(.control) == true {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY), in: sender)
         } else {
             toggleClosedLidWork()
         }
+    }
+
+    @objc func mouseEntered(with event: NSEvent) {
+        hoverWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in self?.showHoverPopover() }
+        hoverWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    @objc func mouseExited(with event: NSEvent) {
+        closeHoverPopover()
+    }
+
+    private func showHoverPopover() {
+        guard confirmationPopover?.isShown != true,
+              hoverPopover?.isShown != true,
+              let button = statusItem.button else { return }
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = HoverStatusViewController(model: HoverStatusModel(
+            keepsWorking: keepsWorkingWithLidClosed,
+            hours: closedLidEstimate?.hours,
+            source: batterySnapshot?.forecastSource
+        ))
+        hoverPopover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    private func closeHoverPopover() {
+        hoverWorkItem?.cancel()
+        hoverWorkItem = nil
+        hoverPopover?.close()
+        hoverPopover = nil
     }
 
     @objc private func toggleClosedLidWork() {
@@ -234,13 +278,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     private func updateForecastUI() {
-        let stateDescription: String
-        switch keepsWorkingWithLidClosed {
-        case true: stateDescription = "🟢 Зелёный: Mac продолжит работать с закрытой крышкой"
-        case false: stateDescription = "🟡 Жёлтый: Mac уснёт при закрытии крышки"
-        case nil: stateDescription = "⚪️ Серый: состояние режима пока неизвестно"
-        }
-
         guard let batterySnapshot else {
             forecastItem.isHidden = false
             forecastItem.title = "Closed-lid estimate: learning…"
@@ -248,7 +285,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: nil
             )
-            statusItem.button?.toolTip = "\(stateDescription)\nЦифра появится после первого замера энергопотребления\nНажмите, чтобы переключить режим"
+            statusItem.button?.toolTip = nil
             return
         }
 
@@ -266,14 +303,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: closedLidEstimate.hours
             )
-            statusItem.button?.toolTip = "\(stateDescription)\n≈ \(closedLidEstimate.hours) ч — прогноз работы от батареи с закрытой крышкой\nРасчёт: \(basis)\nНажмите, чтобы переключить режим"
+            statusItem.button?.toolTip = nil
         } else {
             forecastItem.title = "Closed-lid estimate: learning…"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: nil
             )
-            statusItem.button?.toolTip = "\(stateDescription)\nПрогноз времени: изучаю энергопотребление…\nНажмите, чтобы переключить режим"
+            statusItem.button?.toolTip = nil
         }
     }
 
