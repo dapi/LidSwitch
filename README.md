@@ -3,6 +3,8 @@
 LidSwitch is a tiny native macOS menu bar app that controls whether a running
 MacBook keeps working or goes to sleep when its lid is closed.
 
+Website: [pismenny.ru/lidswitch](https://pismenny.ru/lidswitch/)
+
 Left-click the single laptop icon to switch the mode immediately:
 
 - green screen with a number — the Mac keeps working with its lid closed; the
@@ -26,22 +28,48 @@ Energy Mode; before it has learned one, it uses a conservative baseline model.
 
 ## Requirements
 
-- A MacBook
+- A MacBook with Apple silicon
 - macOS Sequoia 15 or later
 
-## Build and run
+## Install
+
+### Homebrew
+
+```sh
+brew install --cask dapi/tap/lidswitch
+open /Applications/LidSwitch.app
+```
+
+Upgrade later with `brew upgrade --cask lidswitch`.
+
+### Download the app
+
+1. Download `LidSwitch-0.7.0-macos-arm64.zip` from the
+   [latest release](https://github.com/dapi/LidSwitch/releases/latest).
+2. Unzip it and move `LidSwitch.app` to `/Applications`.
+3. Control-click the app in Finder, choose **Open**, then confirm **Open**.
+
+The first public build is ad-hoc signed because it is not yet notarized with an
+Apple Developer ID. If macOS still blocks it after using **Open**, remove the
+download quarantine once and launch it again:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/LidSwitch.app
+open /Applications/LidSwitch.app
+```
+
+Verify the downloaded archive against the `.sha256` file attached to the same
+GitHub release when integrity matters.
+
+### Build from source
 
 Full Xcode is not required. The Swift toolchain from Xcode Command Line Tools is
 enough.
 
 ```sh
+git clone https://github.com/dapi/LidSwitch.git
+cd LidSwitch
 ./Scripts/build-app.sh
-open dist/LidSwitch.app
-```
-
-To install it for the current user:
-
-```sh
 mkdir -p ~/Applications
 cp -R dist/LidSwitch.app ~/Applications/
 open ~/Applications/LidSwitch.app
@@ -58,6 +86,11 @@ operations: check its version, change closed-lid work, or select one of the
 three energy modes. It does not accept arbitrary shell commands or power
 settings from the app. Right-click the icon and choose **Remove passwordless
 switching…** to remove it and its permission.
+
+> [!WARNING]
+> Preventing sleep with the lid closed can drain the battery and generate heat.
+> Do not put a running MacBook into a bag or another enclosed space. Switch
+> LidSwitch to the yellow `Zz` state first.
 
 ## How it works
 
@@ -87,4 +120,10 @@ run that root-owned helper without another password prompt.
 
 ```sh
 swift run LidSwitchCoreChecks
+```
+
+Create a release archive locally with:
+
+```sh
+./Scripts/package-release.sh
 ```
