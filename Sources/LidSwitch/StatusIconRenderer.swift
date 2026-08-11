@@ -1,25 +1,22 @@
 import AppKit
 
 enum StatusIconRenderer {
-    static func image(forecastHours: Int?) -> NSImage {
-        image(text: forecastHours.map { String(min(999, max(0, $0))) })
-    }
-
-    static func confirmationImage(startsWhenLidOpens: Bool) -> NSImage {
-        image(text: startsWhenLidOpens ? "✓" : "×")
-    }
-
-    private static func image(text: String?) -> NSImage {
+    static func image(keepsWorking: Bool?, forecastHours: Int?) -> NSImage {
+        let text = forecastHours.map { String(min(999, max(0, $0))) }
         let size = NSSize(width: 22, height: 18)
-        let image = NSImage(size: size, flipped: false) { bounds in
-            NSColor.labelColor.setStroke()
+        let image = NSImage(size: size, flipped: false) { _ in
+            let screenRect = NSRect(x: 2.5, y: 4.5, width: 17, height: 12)
+            let screen = NSBezierPath(roundedRect: screenRect, xRadius: 2, yRadius: 2)
 
-            let screen = NSBezierPath(
-                roundedRect: NSRect(x: 2.5, y: 4.5, width: 17, height: 12),
-                xRadius: 2,
-                yRadius: 2
-            )
-            screen.lineWidth = 1.5
+            switch keepsWorking {
+            case true: NSColor.systemGreen.setFill()
+            case false: NSColor.systemYellow.setFill()
+            case nil: NSColor.systemGray.setFill()
+            }
+            screen.fill()
+
+            NSColor.labelColor.setStroke()
+            screen.lineWidth = 1.35
             screen.stroke()
 
             let base = NSBezierPath()
@@ -30,23 +27,26 @@ enum StatusIconRenderer {
             base.stroke()
 
             if let text {
-                let fontSize: CGFloat = text.count <= 2 ? 8 : 6.5
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.alignment = .center
                 let attributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold),
-                    .foregroundColor: NSColor.labelColor,
+                    .font: NSFont.monospacedDigitSystemFont(
+                        ofSize: text.count <= 2 ? 8 : 6.5,
+                        weight: .bold
+                    ),
+                    .foregroundColor: NSColor.black.withAlphaComponent(0.82),
                     .paragraphStyle: paragraph
                 ]
                 let textRect = NSRect(x: 3.5, y: 6.1, width: 15, height: 8.5)
                 NSGraphicsContext.saveGraphicsState()
-                NSBezierPath(rect: textRect).addClip()
+                NSBezierPath(roundedRect: screenRect.insetBy(dx: 1, dy: 1), xRadius: 1, yRadius: 1).addClip()
                 text.draw(in: textRect, withAttributes: attributes)
                 NSGraphicsContext.restoreGraphicsState()
             }
             return true
         }
-        image.isTemplate = true
+        // A template image would discard the green/yellow status fill.
+        image.isTemplate = false
         return image
     }
 }

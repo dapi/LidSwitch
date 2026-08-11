@@ -1,12 +1,13 @@
 import AppKit
+import IOKit
 import LidSwitchCore
 
 final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
     private let toggleItem = NSMenuItem(
-        title: "Start when lid opens",
-        action: #selector(toggleLidStartup),
+        title: "Allow work with lid closed",
+        action: #selector(toggleClosedLidWork),
         keyEquivalent: ""
     )
     private let statusTextItem = NSMenuItem(title: "Checking…", action: nil, keyEquivalent: "")
@@ -18,15 +19,16 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     )
     private let helperManager = PrivilegedHelperManager()
     private let forecastController = ClosedLidForecastController()
-    private var preference: BootPreference = .defaultBehavior
+    private var keepsWorkingWithLidClosed: Bool?
     private var batterySnapshot: BatterySnapshot?
     private var closedLidEstimate: ActiveClosedLidEstimate?
+    private var confirmationPopover: NSPopover?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
         if let button = statusItem.button {
-            button.image = StatusIconRenderer.image(forecastHours: nil)
+            button.image = StatusIconRenderer.image(keepsWorking: nil, forecastHours: nil)
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseDown, .rightMouseDown])
@@ -42,11 +44,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         menu.addItem(forecastItem)
         menu.addItem(.separator())
 
-        let refreshItem = NSMenuItem(
-            title: "Refresh",
-            action: #selector(refresh),
-            keyEquivalent: "r"
-        )
+        let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
         menu.addItem(.separator())
@@ -55,12 +53,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         menu.addItem(helperAccessItem)
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(
+        menu.addItem(NSMenuItem(
             title: "Quit LidSwitch",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
-        )
-        menu.addItem(quitItem)
+        ))
 
         forecastController.didUpdate = { [weak self] battery, estimate in
             self?.batterySnapshot = battery
@@ -77,7 +74,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func refresh() {
-        preference = readBootPreference()
+        keepsWorkingWithLidClosed = readSleepDisabled()
         updateUI()
     }
 
@@ -86,25 +83,19 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         if event?.type == .rightMouseDown || event?.modifierFlags.contains(.control) == true {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY), in: sender)
         } else {
-            toggleLidStartup()
+            toggleClosedLidWork()
         }
     }
 
-    @objc private func toggleLidStartup() {
-        // Re-read immediately before changing the value in case another tool
-        // updated NVRAM since LidSwitch last refreshed.
-        preference = readBootPreference()
+    @objc private func toggleClosedLidWork() {
+        keepsWorkingWithLidClosed = readSleepDisabled()
         updateUI()
 
-        guard let currentState = preference.startsWhenLidOpens else {
+        guard let currentState = keepsWorkingWithLidClosed else {
             showError(
-                title: "Unknown BootPreference value",
-                message: "LidSwitch will not overwrite a value it does not recognize."
+                title: "Couldn’t read the setting",
+                message: "macOS did not report whether system sleep is disabled."
             )
-            return
-        }
-
-        guard preference.command(toStartWhenLidOpens: !currentState) != nil else {
             return
         }
 
@@ -119,12 +110,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                 try helperManager.install()
             }
 
-            // The root-owned helper independently derives the exact command
-            // from the requested state and the current NVRAM value.
             let newState = !currentState
-            try helperManager.setStartsWhenLidOpens(newState)
-            refresh()
-            showToggleConfirmation(startsWhenLidOpens: newState)
+            try helperManager.setKeepsWorkingWithLidClosed(newState)
+            keepsWorkingWithLidClosed = readSleepDisabled()
+            guard keepsWorkingWithLidClosed == newState else {
+                throw NSError(
+                    domain: "LidSwitch.PowerManagement",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "macOS did not apply the requested sleep setting."]
+                )
+            }
+            updateUI()
+            showToggleConfirmation(keepsWorking: newState)
         } catch let error as NSError where error.code == -128 {
             // The user cancelled the one-time administrator prompt.
         } catch {
@@ -132,16 +129,40 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
-    private func showToggleConfirmation(startsWhenLidOpens: Bool) {
-        statusItem.button?.image = StatusIconRenderer.confirmationImage(
-            startsWhenLidOpens: startsWhenLidOpens
-        )
-        statusItem.button?.toolTip = startsWhenLidOpens
-            ? "LidSwitch: power-on from shutdown enabled"
-            : "LidSwitch: power-on from shutdown disabled"
+    private func showToggleConfirmation(keepsWorking: Bool) {
+        guard let button = statusItem.button else { return }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.updateForecastUI()
+        confirmationPopover?.close()
+        let label = NSTextField(labelWithString: keepsWorking
+            ? "Mac will keep working when the lid is closed"
+            : "Mac will sleep when the lid is closed")
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.alignment = .center
+        label.maximumNumberOfLines = 2
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let controller = NSViewController()
+        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 270, height: 54))
+        controller.view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: controller.view.leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: controller.view.trailingAnchor, constant: -14),
+            label.centerYAnchor.constraint(equalTo: controller.view.centerYAnchor)
+        ])
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = controller.view.frame.size
+        popover.contentViewController = controller
+        confirmationPopover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak popover] in
+            popover?.close()
+            if self?.confirmationPopover === popover {
+                self?.confirmationPopover = nil
+            }
         }
     }
 
@@ -174,70 +195,59 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
-    private func readBootPreference() -> BootPreference {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/nvram")
-        process.arguments = ["BootPreference"]
-        process.standardOutput = output
-        process.standardError = errors
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return BootPreference.parse(
-                nvramOutput: output.fileHandleForReading.readDataToEndOfFile(),
-                exitCode: process.terminationStatus
-            )
-        } catch {
-            return .unknown(error.localizedDescription)
-        }
+    private func readSleepDisabled() -> Bool? {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != 0 else { return nil }
+        defer { IOObjectRelease(service) }
+        guard let value = IORegistryEntryCreateCFProperty(
+            service,
+            "SleepDisabled" as CFString,
+            kCFAllocatorDefault,
+            0
+        )?.takeRetainedValue() as? NSNumber else { return nil }
+        return value.boolValue
     }
 
     private func updateUI() {
-        switch preference.startsWhenLidOpens {
+        switch keepsWorkingWithLidClosed {
         case true:
-            toggleItem.title = "Disable power-on when lid opens"
+            toggleItem.title = "Allow sleep when lid closes"
             toggleItem.state = .on
             toggleItem.isEnabled = true
-            statusTextItem.title = "Power-on from shutdown: Enabled"
+            statusTextItem.title = "Closed-lid work: Enabled"
         case false:
-            toggleItem.title = "Enable power-on when lid opens"
+            toggleItem.title = "Keep working when lid closes"
             toggleItem.state = .off
             toggleItem.isEnabled = true
-            statusTextItem.title = "Power-on from shutdown: Disabled"
+            statusTextItem.title = "Closed-lid work: Disabled"
         case nil:
-            toggleItem.title = "Power-on when lid opens"
+            toggleItem.title = "Closed-lid work"
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
-            statusTextItem.title = "Power-on from shutdown: Unknown"
+            statusTextItem.title = "Closed-lid work: Unknown"
         }
 
         updateForecastUI()
-
-        if helperManager.isInstalled {
-            helperAccessItem.title = "Remove passwordless switching…"
-        } else {
-            helperAccessItem.title = "Set up passwordless switching…"
-        }
+        helperAccessItem.title = helperManager.isInstalled
+            ? "Remove passwordless switching…"
+            : "Set up passwordless switching…"
     }
 
     private func updateForecastUI() {
-        let startupDescription: String
-        switch preference.startsWhenLidOpens {
-        case true:
-            startupDescription = "power-on from shutdown is on — click to turn off"
-        case false:
-            startupDescription = "power-on from shutdown is off — click to turn on"
-        case nil:
-            startupDescription = "unknown power-on setting"
+        let stateDescription: String
+        switch keepsWorkingWithLidClosed {
+        case true: stateDescription = "keeps working with lid closed — click to allow sleep"
+        case false: stateDescription = "sleeps when lid closes — click to keep working"
+        case nil: stateDescription = "closed-lid state unknown"
         }
 
         guard let batterySnapshot, batterySnapshot.isOnBattery else {
             forecastItem.isHidden = true
-            statusItem.button?.image = StatusIconRenderer.image(forecastHours: nil)
-            statusItem.button?.toolTip = "LidSwitch: \(startupDescription)"
+            statusItem.button?.image = StatusIconRenderer.image(
+                keepsWorking: keepsWorkingWithLidClosed,
+                forecastHours: nil
+            )
+            statusItem.button?.toolTip = "LidSwitch: \(stateDescription)"
             return
         }
 
@@ -245,12 +255,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         if let closedLidEstimate {
             let basis = closedLidEstimate.usesClosedLidMeasurement ? "measured closed" : "modeled display off"
             forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
-            statusItem.button?.image = StatusIconRenderer.image(forecastHours: closedLidEstimate.hours)
-            statusItem.button?.toolTip = "LidSwitch: ≈ \(closedLidEstimate.hours) h with the lid closed; \(startupDescription)"
+            statusItem.button?.image = StatusIconRenderer.image(
+                keepsWorking: keepsWorkingWithLidClosed,
+                forecastHours: closedLidEstimate.hours
+            )
+            statusItem.button?.toolTip = "LidSwitch: ≈ \(closedLidEstimate.hours) h; \(stateDescription)"
         } else {
             forecastItem.title = "Closed-lid estimate: learning…"
-            statusItem.button?.image = StatusIconRenderer.image(forecastHours: nil)
-            statusItem.button?.toolTip = "LidSwitch: measuring active power use; \(startupDescription)"
+            statusItem.button?.image = StatusIconRenderer.image(
+                keepsWorking: keepsWorkingWithLidClosed,
+                forecastHours: nil
+            )
+            statusItem.button?.toolTip = "LidSwitch: measuring active power use; \(stateDescription)"
         }
     }
 

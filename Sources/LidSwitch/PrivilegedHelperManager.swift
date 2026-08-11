@@ -11,7 +11,7 @@ struct PrivilegedHelperManager {
         guard FileManager.default.isExecutableFile(atPath: Self.installedHelperPath) else {
             return false
         }
-        return run(arguments: ["-n", Self.installedHelperPath, "check"]).exitCode == 0
+        return run(arguments: ["-n", Self.installedHelperPath, "check-v2"]).exitCode == 0
     }
 
     func install() throws {
@@ -62,8 +62,8 @@ struct PrivilegedHelperManager {
         try runWithAdministratorPrivileges(command)
     }
 
-    func setStartsWhenLidOpens(_ shouldStart: Bool) throws {
-        let action = shouldStart ? "enable-lid-startup" : "disable-lid-startup"
+    func setKeepsWorkingWithLidClosed(_ shouldKeepWorking: Bool) throws {
+        let action = shouldKeepWorking ? "enable-closed-lid-work" : "disable-closed-lid-work"
         let result = run(arguments: ["-n", Self.installedHelperPath, action])
         guard result.exitCode == 0 else {
             let message = String(decoding: result.error, as: UTF8.self)
