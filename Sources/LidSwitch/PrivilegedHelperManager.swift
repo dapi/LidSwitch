@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
+import LidSwitchAuthorizationShim
 import LidSwitchCore
+import Security
 
 struct PrivilegedHelperManager {
     static let installedHelperPath = "/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper"
@@ -109,23 +111,78 @@ struct PrivilegedHelperManager {
     }
 
     private func runWithAdministratorPrivileges(_ shellCommand: String) throws {
-        let escaped = shellCommand
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let source = "do shell script \"\(escaped)\" with administrator privileges"
+        var authorization: AuthorizationRef?
+        var status = AuthorizationCreate(nil, nil, [], &authorization)
+        guard status == errAuthorizationSuccess, let authorization else {
+            throw authorizationError(status)
+        }
+        defer { AuthorizationFree(authorization, [.destroyRights]) }
 
-        var errorInfo: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&errorInfo)
-        if result == nil || errorInfo != nil {
-            throw NSError(
-                domain: "LidSwitch.Authorization",
-                code: errorInfo?[NSAppleScript.errorNumber] as? Int ?? 1,
-                userInfo: [
-                    NSLocalizedDescriptionKey:
-                        errorInfo?[NSAppleScript.errorMessage] as? String ?? "Unknown authorization error"
-                ]
+        status = kAuthorizationRightExecute.withCString { rightName in
+            var right = AuthorizationItem(
+                name: rightName,
+                valueLength: 0,
+                value: nil,
+                flags: 0
+            )
+            return withUnsafeMutablePointer(to: &right) { rightPointer in
+                var rights = AuthorizationRights(count: 1, items: rightPointer)
+                return AuthorizationCopyRights(
+                    authorization,
+                    &rights,
+                    nil,
+                    [.interactionAllowed, .extendRights, .preAuthorize],
+                    nil
+                )
+            }
+        }
+        guard status == errAuthorizationSuccess else {
+            throw authorizationError(status)
+        }
+
+        let arguments = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: 3)
+        arguments.initialize(repeating: nil, count: 3)
+        arguments[0] = strdup("-c")
+        arguments[1] = strdup(shellCommand)
+        defer {
+            free(arguments[0])
+            free(arguments[1])
+            arguments.deinitialize(count: 3)
+            arguments.deallocate()
+        }
+
+        var communicationsPipe: UnsafeMutablePointer<FILE>?
+        status = "/bin/sh".withCString { executablePath in
+            LidSwitchExecuteWithPrivileges(
+                authorization,
+                executablePath,
+                UnsafePointer(arguments),
+                &communicationsPipe
             )
         }
+        guard status == errAuthorizationSuccess else {
+            throw authorizationError(status)
+        }
+
+        // Reading to EOF also waits for the one-time installer to finish before
+        // validating the newly installed helper and sudoers rule.
+        if let communicationsPipe {
+            _ = FileHandle(
+                fileDescriptor: fileno(communicationsPipe),
+                closeOnDealloc: false
+            ).readDataToEndOfFile()
+            fclose(communicationsPipe)
+        }
+    }
+
+    private func authorizationError(_ status: OSStatus) -> NSError {
+        let wasCancelled = status == errAuthorizationCanceled
+        let message = SecCopyErrorMessageString(status, nil) as String?
+        return NSError(
+            domain: "LidSwitch.Authorization",
+            code: wasCancelled ? -128 : Int(status),
+            userInfo: [NSLocalizedDescriptionKey: message ?? "Authorization failed (\(status))."]
+        )
     }
 
     private func shellQuote(_ value: String) -> String {

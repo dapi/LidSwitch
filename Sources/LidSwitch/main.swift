@@ -226,7 +226,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         guard !helperManager.isInstalled else { return true }
         let alert = NSAlert()
         alert.messageText = "Set up passwordless switching?"
-        alert.informativeText = "macOS will ask for your administrator password once to install LidSwitch’s narrowly scoped helper. Future switches won’t ask again."
+        alert.informativeText = "macOS will ask once for Touch ID or an administrator password to install LidSwitch’s narrowly scoped helper. Future switches won’t ask again."
         alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return false }

@@ -45,8 +45,9 @@ open ~/Applications/LidSwitch.app
 ```
 
 macOS asks for one-time approval of LidSwitch's narrowly scoped privileged
-helper. Subsequent switches do not ask for a password. An existing helper from
-LidSwitch 0.3.x is automatically detected as outdated and replaced during that
+helper through its system authorization UI. Touch ID is available when macOS
+offers it, with an administrator password as the fallback. Subsequent switches
+do not ask again. An outdated helper is detected and replaced during this
 one-time setup.
 
 The installed helper is owned by `root` and accepts only a fixed allowlist of

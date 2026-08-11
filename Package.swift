@@ -15,8 +15,9 @@ let package = Package(
         .target(name: "LidSwitchCore"),
         .executableTarget(
             name: "LidSwitch",
-            dependencies: ["LidSwitchCore"]
+            dependencies: ["LidSwitchCore", "LidSwitchAuthorizationShim"]
         ),
+        .target(name: "LidSwitchAuthorizationShim"),
         .executableTarget(
             name: "LidSwitchHelper",
             dependencies: ["LidSwitchCore"]
