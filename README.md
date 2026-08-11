@@ -1,5 +1,7 @@
 # LidSwitch
 
+**English** · [Русский](README.ru.md)
+
 LidSwitch is a tiny native macOS menu bar app that controls whether a running
 MacBook keeps working or goes to sleep when its lid is closed.
 
