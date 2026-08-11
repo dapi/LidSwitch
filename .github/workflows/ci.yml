@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all products
+        run: swift build
+      - name: Verify M2 debug bundle and security invariants
+        run: ./Scripts/verify-m2-spike.sh debug
+      - name: Verify deterministic M2 update fixtures
+        run: ./Scripts/verify-m2-update-fixtures.sh debug
+      - name: Verify M2 release bundle
+        run: ./Scripts/verify-m2-spike.sh release

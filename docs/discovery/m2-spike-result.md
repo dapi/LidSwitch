@@ -1,0 +1,254 @@
+# M2 spike: `SMAppService` daemon + authenticated XPC
+
+Дата: 2026-08-11. Ветка: `agent/lidswitch-discovery`.
+Статус: **реализация готова; live lifecycle gate ожидает Developer ID + notarization**.
+
+## Цель
+
+Проверить минимальный вертикальный срез будущей M2-архитектуры, не перенося
+power operations и не удаляя текущий helper:
+
+1. embedded launch daemon регистрируется через `SMAppService`;
+2. app вызывает единственную XPC-операцию `check-version`;
+3. daemon исполняется как root;
+4. daemon принимает только подписанный LidSwitch client;
+5. install/update/unregister проходят через системный lifecycle.
+
+## Что реализовано
+
+- Новый `LidSwitchDaemon` без GUI, shell execution, файлового или сетевого
+  доступа. Ответ: `m2-spike-v1;euid=<uid>`.
+- Plist в `Contents/Library/LaunchDaemons` с `BundleProgram` и on-demand
+  `MachServices`.
+- Общий Objective-C-compatible XPC protocol.
+- Двусторонняя проверка code signature через системные
+  `NSXPCListener.setConnectionCodeSigningRequirement` и
+  `NSXPCConnection.setCodeSigningRequirement`.
+- В Developer ID build requirement связывает peer с точным bundle ID и Team ID.
+  В ad-hoc build fallback проверяет только bundle ID и явно маркируется как
+  **not production-safe**.
+- Диагностический раздел `M2 daemon spike` в меню: status, register/open
+  approval settings, check version, unregister.
+- CLI диагностика тем же подписанным app executable:
+
+  ```sh
+  /Applications/LidSwitch.app/Contents/MacOS/LidSwitch --m2-daemon-status
+  /Applications/LidSwitch.app/Contents/MacOS/LidSwitch --m2-check-version
+  ```
+
+- Отдельный `LidSwitchUnauthorizedProbe`, подписываемый той же build identity,
+  но с другим signing identifier, для негативного XPC-теста.
+- Детерминированные compile-time fixtures `m2-spike-v1` и `m2-spike-v2`; default
+  остается v1, а v2 включается только через
+  `LIDSWITCH_M2_PROTOCOL_VARIANT=v2`.
+- `Scripts/verify-m2-spike.sh` проверяет layout, plist, подписи, несовпадение
+  identifier unauthorized probe, одинаковый Team ID всех peer binaries в
+  Developer ID build и существующие core checks.
+- `LidSwitchDaemonProtocolChecks` компилирует generated code-signing
+  requirements через Security.framework и фиксирует точный allowlist ключей
+  launchd plist, не позволяя незаметно расширить daemon surface.
+- `Scripts/verify-m2-update-fixtures.sh` доказывает разные version replies и
+  SHA-256 daemon executable для v1/v2, затем восстанавливает default v1.
+- CI выполняет build, debug/release spike verification, security invariants и
+  update-fixture test без signing secrets.
+- Legacy `LidSwitchHelper`, его UI и `/etc/sudoers.d` workflow не изменены и не
+  удаляются этим spike.
+
+## Основание Apple
+
+- `SMAppService.daemon(plistName:)` ищет plist именно в
+  `Contents/Library/LaunchDaemons`
+  ([Apple documentation](https://developer.apple.com/documentation/servicemanagement/smappservice/daemon%28plistname%3A%29)).
+- `BundleProgram` задает bundle-relative executable; Apple рекомендует держать
+  daemon-owning app в `/Applications`. В текущем SDK также указано, что apps с
+  LaunchDaemons должны быть notarized
+  ([SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice)).
+- LaunchDaemon становится runnable только после admin approval
+  ([register](https://developer.apple.com/documentation/servicemanagement/smappservice/register%28%29)).
+- Apple предоставляет code-signing requirements непосредственно на XPC
+  connection/listener
+  ([connection](https://developer.apple.com/documentation/foundation/nsxpcconnection/setcodesigningrequirement%28_%3A%29),
+  [listener](https://developer.apple.com/documentation/foundation/nsxpclistener/setconnectioncodesigningrequirement%28_%3A%29)).
+- При изменении daemon executable/plist его нужно re-register; для измененного
+  executable Apple рекомендует сначала unregister
+  ([Apple DTS](https://developer.apple.com/forums/thread/783539)).
+
+## Автоматически проверено
+
+На macOS 26.5.1 (25F80) проверки пройдены сначала с Command Line Tools Swift
+6.3.2, затем с полным Xcode 26.6 (17F113), Swift 6.3.3:
+
+```text
+swift build
+Build complete
+
+./Scripts/verify-m2-spike.sh debug
+PASS: M2 bundle layout, launchd plist, signatures, peer identity checks,
+      status path, and existing core checks
+All LidSwitchCore checks passed
+
+./Scripts/verify-m2-spike.sh release
+PASS: M2 bundle layout, launchd plist, signatures, peer identity checks,
+      status path, and existing core checks
+
+./Scripts/package-release.sh
+LidSwitch-0.7.0-macos-arm64.zip
+shasum: OK
+
+./Scripts/verify-m2-update-fixtures.sh debug
+PASS: deterministic M2 update fixtures
+v1: m2-spike-v1 daemon-sha256=<v1 hash>
+v2: m2-spike-v2 daemon-sha256=<different v2 hash>
+```
+
+Проверены:
+
+- оба новых executable собираются;
+- daemon и legacy helper находятся в ожидаемых местах;
+- launchd plist валиден и содержит точные label/path/Mach service;
+- app bundle проходит strict code-signature verification;
+- daemon satisfies `identifier "me.dapi.LidSwitch.Daemon"`;
+- probe satisfies только свой identifier
+  `me.dapi.LidSwitch.UnauthorizedProbe`;
+- unauthorized probe не satisfies app identifier requirement;
+- при наличии Team ID verifier требует его точного совпадения у app, daemon и
+  probe;
+- legacy core checks остаются зелеными;
+- release archive содержит daemon и launchd plist, но не содержит diagnostic
+  unauthorized probe; распакованный app проходит strict signature verification;
+- signing requirement strings проходят системный parser Security.framework;
+- plist check разрешает только `Label`, `BundleProgram`,
+  `AssociatedBundleIdentifiers`, `MachServices` и `EnableTransactions`.
+
+## Что нельзя честно подтвердить на текущей машине
+
+В login keychain нет ни одной valid code-signing identity:
+
+```text
+security find-identity -v -p codesigning
+0 valid identities found
+```
+
+Полный Xcode, `notarytool` и `stapler` уже установлены и проверены. Оставшийся
+внешний precondition — активация Apple Developer Program, после которой можно
+выпустить Developer ID Application certificate и сохранить notary credentials.
+
+Поэтому локальная сборка ad-hoc, не notarized. `SMAppService.status` для нее
+возвращает `Not found in app bundle`, хотя `Bundle.main` и static layout корректны.
+Live registration намеренно не запускалась: это не дало бы production-grade
+проверку и могло бы оставить сломанную Background Task Management registration.
+
+Это не дефект, который следует обходить ослаблением подписи. Apple требует
+code-signed app для `SMAppService`, admin approval для daemon и notarization для
+app с LaunchDaemon. Production authentication также требует реальный Team ID;
+bundle-ID-only ad-hoc signature можно подделать другой ad-hoc сборкой.
+
+## Live lifecycle gate
+
+Нужны полный Xcode (для `stapler`), установленный Developer ID Application
+certificate и настроенный `notarytool` profile. Credential сохраняется в
+Keychain интерактивно и не передается build scripts:
+
+```sh
+xcrun notarytool store-credentials LidSwitch
+```
+
+1. Собрать, notarize, staple, проверить Gatekeeper и создать финальный archive:
+
+   ```sh
+   LIDSWITCH_CODESIGN_IDENTITY="Developer ID Application: …" \
+   LIDSWITCH_NOTARY_PROFILE="LidSwitch" \
+     ./Scripts/notarize-release.sh
+   ```
+
+   Ответ notarization сохраняется локально в
+   `dist/notarization/submission.plist`. Скрипт останавливается до upload, если
+   identity/profile/full Xcode отсутствуют, и не использует `--force`.
+
+2. Переместить stapled `dist/LidSwitch.app` в `/Applications`, затем проверить
+   artifacts без изменения Service Management state:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh preflight
+   ```
+
+3. Зарегистрировать daemon. Флаг намеренно подтверждает изменение системного
+   Service Management state:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh register --confirm-system-changes
+   ```
+
+   Если status — `Requires approval`, скрипт откроет Login Items. Разрешить
+   LidSwitch с admin authentication.
+
+4. Проверить authorized root reply и rejection same-Team/wrong-identifier
+   probe одной командой:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh verify
+   ```
+
+   Success требует точный authorized reply `m2-spike-v1;euid=0`; probe с
+   identifier `me.dapi.LidSwitch.UnauthorizedProbe` должен получить явный
+   rejection. Preflight также требует одинаковый production Team ID у app,
+   daemon и probe.
+
+   Каждый запуск сохраняет локальный evidence log в
+   `dist/m2-live-evidence/<UTC timestamp>-<action>.log`. Он содержит macOS/build,
+   boot time, commit, Team ID, daemon CDHash/SHA-256, status и authorized reply.
+   Для удобного сравнения запуск можно пометить через безопасный
+   `LIDSWITCH_M2_EVIDENCE_TAG`; существующий log никогда не перезаписывается.
+
+5. На работающей v1 сохранить update baseline, затем documented способом
+   unregister service перед заменой executable:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh snapshot-update-baseline
+   ./Scripts/m2-live-gate.sh unregister --confirm-system-changes
+   ```
+
+6. Собрать/notarize v2, заменить app в `/Applications`, снова register и
+   доказать, что активен новый daemon binary/reply:
+
+   ```sh
+   LIDSWITCH_M2_PROTOCOL_VARIANT=v2 \
+   LIDSWITCH_CODESIGN_IDENTITY="Developer ID Application: …" \
+   LIDSWITCH_NOTARY_PROFILE="LidSwitch" \
+     ./Scripts/notarize-release.sh
+
+   ./Scripts/m2-live-gate.sh register --confirm-system-changes
+   ./Scripts/m2-live-gate.sh verify-update
+   ```
+
+   `verify-update` требует, чтобы и protocol version, и SHA-256 daemon
+   отличались от v1 baseline, после чего выполняет root round-trip и negative
+   probe. Повторного расширения полномочий быть не должно. Для нескольких
+   прогонов задается одинаковый на шагах baseline/verify уникальный
+   `LIDSWITCH_M2_UPDATE_ID`; существующий baseline runner не перезаписывает.
+
+7. После reboot снова выполнить `verify`; boot time в evidence должен
+   измениться, daemon обязан остаться `Enabled` и запускаться on demand.
+8. Завершить lifecycle gate:
+
+   ```sh
+   ./Scripts/m2-live-gate.sh unregister --confirm-system-changes
+   ```
+
+   Status должен стать `Not registered`. Legacy helper должен продолжить
+   работать; если он установлен, runner сравнивает его SHA-256 до и после.
+
+## Gate и решение
+
+Текущий результат — **GO к notarized live test**, но еще не GO к переносу
+`disablesleep`/energy operations.
+
+M2 считается доказанным только если одновременно:
+
+- authorized call возвращает ожидаемую версию и `euid=0`;
+- same-Team wrong-identifier probe отклонен;
+- update загружает новую daemon version после documented re-registration;
+- unregister удаляет job, не затрагивая legacy helper;
+- после reboot approved daemon снова доступен on demand.
+
+До закрытия этих пунктов текущий helper остается production path.

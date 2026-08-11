@@ -1,6 +1,7 @@
 import AppKit
 import IOKit
 import LidSwitchCore
+import LidSwitchDaemonProtocol
 
 final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -21,7 +22,25 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         action: #selector(manageHelperAccess),
         keyEquivalent: ""
     )
+    private let m2DaemonHeader = NSMenuItem(title: "M2 daemon spike", action: nil, keyEquivalent: "")
+    private let m2DaemonStatusItem = NSMenuItem(title: "Status: Checking…", action: nil, keyEquivalent: "")
+    private let m2DaemonRegisterItem = NSMenuItem(
+        title: "Register M2 daemon…",
+        action: #selector(registerM2Daemon),
+        keyEquivalent: ""
+    )
+    private let m2DaemonCheckItem = NSMenuItem(
+        title: "Check M2 daemon version",
+        action: #selector(checkM2DaemonVersion),
+        keyEquivalent: ""
+    )
+    private let m2DaemonUnregisterItem = NSMenuItem(
+        title: "Unregister M2 daemon…",
+        action: #selector(unregisterM2Daemon),
+        keyEquivalent: ""
+    )
     private let helperManager = PrivilegedHelperManager()
+    private let serviceManagedDaemonManager = ServiceManagedDaemonManager()
     private let forecastController = ClosedLidForecastController()
     private var keepsWorkingWithLidClosed: Bool?
     private var energyMode: EnergyMode?
@@ -73,6 +92,18 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         helperAccessItem.target = self
         menu.addItem(helperAccessItem)
+        menu.addItem(.separator())
+
+        m2DaemonHeader.isEnabled = false
+        m2DaemonStatusItem.isEnabled = false
+        for item in [m2DaemonRegisterItem, m2DaemonCheckItem, m2DaemonUnregisterItem] {
+            item.target = self
+        }
+        menu.addItem(m2DaemonHeader)
+        menu.addItem(m2DaemonStatusItem)
+        menu.addItem(m2DaemonRegisterItem)
+        menu.addItem(m2DaemonCheckItem)
+        menu.addItem(m2DaemonUnregisterItem)
         menu.addItem(.separator())
 
         menu.addItem(NSMenuItem(
@@ -298,6 +329,84 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
+    @objc private func registerM2Daemon() {
+        if serviceManagedDaemonManager.status == .requiresApproval {
+            serviceManagedDaemonManager.openApprovalSettings()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Register the M2 spike daemon?"
+        alert.informativeText = "This registers the embedded check-version daemon through macOS Service Management. It does not replace or remove the current LidSwitch helper. An administrator must approve it in Login Items."
+        alert.addButton(withTitle: "Register")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try serviceManagedDaemonManager.register()
+            updateM2DaemonUI()
+            if serviceManagedDaemonManager.status == .requiresApproval {
+                serviceManagedDaemonManager.openApprovalSettings()
+            } else {
+                showConfirmation("M2 daemon registration requested")
+            }
+        } catch {
+            updateM2DaemonUI()
+            if serviceManagedDaemonManager.status == .requiresApproval {
+                serviceManagedDaemonManager.openApprovalSettings()
+            } else {
+                showError(title: "Couldn’t register the M2 daemon", message: error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func checkM2DaemonVersion() {
+        m2DaemonCheckItem.isEnabled = false
+        m2DaemonCheckItem.title = "Checking M2 daemon…"
+        serviceManagedDaemonManager.checkVersion { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.updateM2DaemonUI()
+                switch result {
+                case .success(let response):
+                    let expected = "\(LidSwitchDaemonConstants.protocolVersion);euid=0"
+                    let isExpected = response == expected
+                    if isExpected {
+                        self.showConfirmation("M2 daemon replied: \(response)")
+                    } else {
+                        self.showError(
+                            title: "Unexpected M2 daemon response",
+                            message: response
+                        )
+                    }
+                case .failure(let error):
+                    self.showError(
+                        title: "Couldn’t contact the M2 daemon",
+                        message: error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
+    @objc private func unregisterM2Daemon() {
+        let alert = NSAlert()
+        alert.messageText = "Unregister the M2 spike daemon?"
+        alert.informativeText = "This removes only the Service Management spike registration. The current LidSwitch helper and sudoers rule are unchanged."
+        alert.addButton(withTitle: "Unregister")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try serviceManagedDaemonManager.unregister()
+            updateM2DaemonUI()
+            showConfirmation("M2 daemon unregistered")
+        } catch {
+            updateM2DaemonUI()
+            showError(title: "Couldn’t unregister the M2 daemon", message: error.localizedDescription)
+        }
+    }
+
     private func readSleepDisabled() -> Bool? {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
         guard service != 0 else { return nil }
@@ -358,6 +467,36 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         helperAccessItem.title = helperManager.isInstalled
             ? "Remove passwordless switching…"
             : "Set up passwordless switching…"
+        updateM2DaemonUI()
+    }
+
+    private func updateM2DaemonUI() {
+        let status = serviceManagedDaemonManager.status
+        m2DaemonStatusItem.title = "Status: \(status.rawValue); auth: \(serviceManagedDaemonManager.peerAuthenticationDescription)"
+
+        switch status {
+        case .notRegistered:
+            m2DaemonRegisterItem.title = "Register M2 daemon…"
+            m2DaemonRegisterItem.isEnabled = true
+            m2DaemonCheckItem.isEnabled = false
+            m2DaemonUnregisterItem.isEnabled = false
+        case .requiresApproval:
+            m2DaemonRegisterItem.title = "Open approval settings…"
+            m2DaemonRegisterItem.isEnabled = true
+            m2DaemonCheckItem.isEnabled = false
+            m2DaemonUnregisterItem.isEnabled = true
+        case .enabled:
+            m2DaemonRegisterItem.title = "M2 daemon registered"
+            m2DaemonRegisterItem.isEnabled = false
+            m2DaemonCheckItem.isEnabled = true
+            m2DaemonUnregisterItem.isEnabled = true
+        case .notFound, .unknown:
+            m2DaemonRegisterItem.title = "Register M2 daemon…"
+            m2DaemonRegisterItem.isEnabled = false
+            m2DaemonCheckItem.isEnabled = false
+            m2DaemonUnregisterItem.isEnabled = false
+        }
+        m2DaemonCheckItem.title = "Check M2 daemon version"
     }
 
     private func updateForecastUI() {
@@ -407,6 +546,71 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         alert.runModal()
     }
 }
+
+private func runM2CommandLineModeIfRequested() {
+    let arguments = CommandLine.arguments.dropFirst()
+    let supportedArguments = [
+        "--m2-daemon-status",
+        "--m2-protocol-version",
+        "--m2-check-version",
+        "--m2-register",
+        "--m2-unregister",
+        "--m2-open-approval-settings"
+    ]
+    guard supportedArguments.contains(where: arguments.contains) else {
+        return
+    }
+
+    let manager = ServiceManagedDaemonManager()
+    if arguments.contains("--m2-protocol-version") {
+        print(LidSwitchDaemonConstants.protocolVersion)
+        exit(0)
+    }
+
+    if arguments.contains("--m2-daemon-status") {
+        print("\(manager.status.rawValue); auth: \(manager.peerAuthenticationDescription); bundle: \(Bundle.main.bundlePath)")
+        exit(0)
+    }
+
+    if arguments.contains("--m2-open-approval-settings") {
+        manager.openApprovalSettings()
+        exit(0)
+    }
+
+    if arguments.contains("--m2-register") || arguments.contains("--m2-unregister") {
+        do {
+            if arguments.contains("--m2-register") {
+                try manager.register()
+            } else {
+                try manager.unregister()
+            }
+            print(manager.status.rawValue)
+            exit(0)
+        } catch {
+            fputs(error.localizedDescription + "\n", stderr)
+            exit(1)
+        }
+    }
+
+    let semaphore = DispatchSemaphore(value: 0)
+    var exitCode: Int32 = 1
+    manager.checkVersion { result in
+        switch result {
+        case .success(let response):
+            print(response)
+            let expected = "\(LidSwitchDaemonConstants.protocolVersion);euid=0"
+            exitCode = response == expected ? 0 : 1
+        case .failure(let error):
+            fputs(error.localizedDescription + "\n", stderr)
+            exitCode = 1
+        }
+        semaphore.signal()
+    }
+    _ = semaphore.wait(timeout: .now() + 7)
+    exit(exitCode)
+}
+
+runM2CommandLineModeIfRequested()
 
 let application = NSApplication.shared
 let delegate = ApplicationDelegate()
