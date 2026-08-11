@@ -7,9 +7,9 @@ It changes only lid-open behavior. If startup on power connection was already
 disabled, LidSwitch preserves that preference.
 
 While running on battery, the single menu bar icon shows an estimated number of
-hours the Mac can remain in clamshell sleep if you close the lid now. The number
-is drawn inside the laptop screen, so the status item never grows wider. On AC
-power, the icon has no number.
+hours the Mac can keep working actively with the lid closed and its built-in
+display off. The number is drawn inside the laptop screen, so the status item
+never grows wider. On AC power, the icon has no number.
 
 ## Requirements
 
@@ -59,10 +59,11 @@ values:
 
 LidSwitch refuses to overwrite unknown values.
 
-The closed-lid forecast learns from completed `Clamshell Sleep` sessions in the
-local macOS power log. It excludes sessions that used external power and uses
-recent, sufficiently long sleeps with a measurable battery drop. Until enough
-history exists, the icon remains empty.
+The forecast uses a rolling median of live battery power measurements. With the
+lid open, it models closed-lid consumption by subtracting the internal display's
+brightness-dependent draw. If the Mac is already awake with its lid closed, it
+uses the directly measured power instead. The workload is assumed to remain
+similar, so the number changes as CPU/GPU activity changes.
 
 During one-time setup, LidSwitch installs the helper at
 `/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` and validates a narrow

@@ -20,7 +20,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let forecastController = ClosedLidForecastController()
     private var preference: BootPreference = .defaultBehavior
     private var batterySnapshot: BatterySnapshot?
-    private var closedLidEstimate: ClosedLidEstimate?
+    private var closedLidEstimate: ActiveClosedLidEstimate?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -224,13 +224,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         forecastItem.isHidden = false
         if let closedLidEstimate {
-            forecastItem.title = "If closed now: ≈ \(closedLidEstimate.hours) h"
+            let basis = closedLidEstimate.usesClosedLidMeasurement ? "measured closed" : "modeled display off"
+            forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
             statusItem.button?.image = StatusIconRenderer.image(forecastHours: closedLidEstimate.hours)
             statusItem.button?.toolTip = "LidSwitch: ≈ \(closedLidEstimate.hours) h with the lid closed; \(startupDescription)"
         } else {
             forecastItem.title = "Closed-lid estimate: learning…"
             statusItem.button?.image = StatusIconRenderer.image(forecastHours: nil)
-            statusItem.button?.toolTip = "LidSwitch: learning closed-lid battery use; \(startupDescription)"
+            statusItem.button?.toolTip = "LidSwitch: measuring active power use; \(startupDescription)"
         }
     }
 

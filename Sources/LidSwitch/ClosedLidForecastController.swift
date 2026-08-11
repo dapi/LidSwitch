@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOKit
 import IOKit.ps
 import LidSwitchCore
 
@@ -9,24 +10,26 @@ struct BatterySnapshot {
 }
 
 final class ClosedLidForecastController {
-    var didUpdate: ((BatterySnapshot, ClosedLidEstimate?) -> Void)?
+    var didUpdate: ((BatterySnapshot, ActiveClosedLidEstimate?) -> Void)?
 
-    private var learnedLog: String?
+    private var powerSamples: [Double] = []
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
+    private var previousClamshellState: Bool?
 
     func start() {
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            self?.publishCurrentEstimate()
+        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            self?.sampleAndPublish()
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.reloadHistory()
+            self?.powerSamples.removeAll()
+            self?.sampleAndPublish()
         }
-        reloadHistory()
+        sampleAndPublish()
     }
 
     deinit {
@@ -36,59 +39,142 @@ final class ClosedLidForecastController {
         }
     }
 
-    private func reloadHistory() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let process = Process()
-            let output = Pipe()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-            process.arguments = ["-g", "log"]
-            process.standardOutput = output
-            process.standardError = FileHandle.nullDevice
+    private func sampleAndPublish() {
+        guard let measurement = readPowerMeasurement() else { return }
 
-            do {
-                try process.run()
-                let data = output.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                guard process.terminationStatus == 0 else { return }
+        let snapshot = BatterySnapshot(
+            isOnBattery: measurement.isOnBattery,
+            chargePercent: measurement.chargePercent
+        )
+        guard measurement.isOnBattery else {
+            powerSamples.removeAll()
+            didUpdate?(snapshot, nil)
+            return
+        }
 
-                DispatchQueue.main.async {
-                    self?.learnedLog = String(decoding: data, as: UTF8.self)
-                    self?.publishCurrentEstimate()
-                }
-            } catch {
-                DispatchQueue.main.async { self?.publishCurrentEstimate() }
+        if previousClamshellState != measurement.isClamshellClosed {
+            powerSamples.removeAll()
+            previousClamshellState = measurement.isClamshellClosed
+        }
+
+        if measurement.systemWatts >= 0.5, measurement.systemWatts <= 150 {
+            powerSamples.append(measurement.systemWatts)
+            if powerSamples.count > 18 {
+                powerSamples.removeFirst(powerSamples.count - 18)
             }
         }
+
+        guard let medianWatts = median(powerSamples) else {
+            didUpdate?(snapshot, nil)
+            return
+        }
+
+        let estimate = ActiveClosedLidEstimator.estimate(
+            remainingEnergyWh: measurement.remainingEnergyWh,
+            measuredSystemWatts: medianWatts,
+            displayBrightness: measurement.displayBrightness,
+            isClamshellClosed: measurement.isClamshellClosed
+        )
+        didUpdate?(snapshot, estimate)
     }
 
-    private func publishCurrentEstimate() {
-        guard let battery = readBatterySnapshot() else { return }
-        let estimate = learnedLog.flatMap {
-            ClosedLidEstimator.estimate(log: $0, currentChargePercent: battery.chargePercent)
-        }
-        didUpdate?(battery, estimate)
+    private struct PowerMeasurement {
+        let isOnBattery: Bool
+        let chargePercent: Double
+        let remainingEnergyWh: Double
+        let systemWatts: Double
+        let displayBrightness: Double
+        let isClamshellClosed: Bool
     }
 
-    private func readBatterySnapshot() -> BatterySnapshot? {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let sourceType = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?,
-              let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
-            return nil
-        }
+    private func readPowerMeasurement() -> PowerMeasurement? {
+        let battery = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard battery != 0 else { return nil }
+        defer { IOObjectRelease(battery) }
 
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue()
-                as? [String: Any],
-                  let current = description[kIOPSCurrentCapacityKey] as? Double,
-                  let maximum = description[kIOPSMaxCapacityKey] as? Double,
-                  maximum > 0 else {
-                continue
-            }
-            return BatterySnapshot(
-                isOnBattery: sourceType == kIOPSBatteryPowerValue,
-                chargePercent: current / maximum * 100
-            )
+        guard let properties = IORegistryEntryCreateCFPropertiesValue(battery) else { return nil }
+        let isExternalConnected = bool(properties["ExternalConnected"]) ?? true
+        let chargePercent = number(properties["CurrentCapacity"]) ?? 0
+        let rawCapacityMAh = number(properties["AppleRawCurrentCapacity"]) ?? 0
+        let voltageMV = number(properties["Voltage"]) ?? 0
+        let amperageMA = signedNumber(properties["InstantAmperage"])
+
+        // Raw capacity uses mAh. A nominal pack voltage is less volatile than
+        // instantaneous voltage for estimating remaining energy.
+        let remainingEnergyWh = rawCapacityMAh * 11.55 / 1000
+        let systemWatts = abs(amperageMA) * voltageMV / 1_000_000
+
+        return PowerMeasurement(
+            isOnBattery: !isExternalConnected,
+            chargePercent: chargePercent,
+            remainingEnergyWh: remainingEnergyWh,
+            systemWatts: systemWatts,
+            displayBrightness: readDisplayBrightness(),
+            isClamshellClosed: readClamshellState()
+        )
+    }
+
+    private func readDisplayBrightness() -> Double {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleARMBacklight"))
+        guard service != 0 else { return 0.5 }
+        defer { IOObjectRelease(service) }
+
+        guard let parameters = IORegistryEntryCreateCFProperty(
+            service,
+            "IODisplayParameters" as CFString,
+            kCFAllocatorDefault,
+            0
+        )?.takeRetainedValue() as? [String: Any],
+              let brightness = parameters["brightness"] as? [String: Any],
+              let value = number(brightness["value"]),
+              let maximum = number(brightness["max"]),
+              maximum > 0 else {
+            return 0.5
         }
+        return value / maximum
+    }
+
+    private func readClamshellState() -> Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != 0 else { return false }
+        defer { IOObjectRelease(service) }
+        guard let value = IORegistryEntryCreateCFProperty(
+            service,
+            "AppleClamshellState" as CFString,
+            kCFAllocatorDefault,
+            0
+        )?.takeRetainedValue() else { return false }
+        return bool(value) ?? false
+    }
+
+    private func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
+    }
+
+    private func number(_ value: Any?) -> Double? {
+        (value as? NSNumber)?.doubleValue
+    }
+
+    private func signedNumber(_ value: Any?) -> Double {
+        guard let number = value as? NSNumber else { return 0 }
+        return Double(Int64(bitPattern: number.uint64Value))
+    }
+
+    private func bool(_ value: Any?) -> Bool? {
+        (value as? NSNumber)?.boolValue
+    }
+}
+
+private func IORegistryEntryCreateCFPropertiesValue(_ entry: io_registry_entry_t) -> [String: Any]? {
+    var properties: Unmanaged<CFMutableDictionary>?
+    guard IORegistryEntryCreateCFProperties(entry, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS else {
         return nil
     }
+    return properties?.takeRetainedValue() as? [String: Any]
 }
