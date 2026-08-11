@@ -17,7 +17,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "LidSwitch")
-            button.toolTip = "LidSwitch"
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         toggleItem.target = self
@@ -43,7 +45,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             keyEquivalent: "q"
         )
         menu.addItem(quitItem)
-        statusItem.menu = menu
 
         refresh()
     }
@@ -54,10 +55,23 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func refresh() {
         preference = readBootPreference()
-        updateMenu()
+        updateUI()
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.minY), in: sender)
+        } else {
+            toggleLidStartup()
+        }
     }
 
     @objc private func toggleLidStartup() {
+        // Re-read immediately before changing the value in case another tool
+        // updated NVRAM since LidSwitch last refreshed.
+        preference = readBootPreference()
+        updateUI()
+
         guard let currentState = preference.startsWhenLidOpens else {
             showError(
                 title: "Unknown BootPreference value",
@@ -101,20 +115,35 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
-    private func updateMenu() {
+    private func updateUI() {
         switch preference.startsWhenLidOpens {
         case true:
             toggleItem.state = .on
             toggleItem.isEnabled = true
             statusTextItem.title = "Opening the lid starts this Mac"
+            statusItem.button?.image = NSImage(
+                systemSymbolName: "laptopcomputer",
+                accessibilityDescription: "Startup when opening the lid is enabled"
+            )
+            statusItem.button?.toolTip = "LidSwitch: lid startup is on — click to turn off"
         case false:
             toggleItem.state = .off
             toggleItem.isEnabled = true
             statusTextItem.title = "Opening the lid won’t start this Mac"
+            statusItem.button?.image = NSImage(
+                systemSymbolName: "laptopcomputer.slash",
+                accessibilityDescription: "Startup when opening the lid is disabled"
+            )
+            statusItem.button?.toolTip = "LidSwitch: lid startup is off — click to turn on"
         case nil:
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
             statusTextItem.title = "Unknown system setting"
+            statusItem.button?.image = NSImage(
+                systemSymbolName: "laptopcomputer.trianglebadge.exclamationmark",
+                accessibilityDescription: "Unknown lid startup setting"
+            )
+            statusItem.button?.toolTip = "LidSwitch: unknown setting — right-click for details"
         }
     }
 
@@ -148,4 +177,3 @@ let application = NSApplication.shared
 let delegate = ApplicationDelegate()
 application.delegate = delegate
 application.run()
-

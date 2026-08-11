@@ -32,8 +32,9 @@ cp -R dist/LidSwitch.app ~/Applications/
 open ~/Applications/LidSwitch.app
 ```
 
-Click the laptop icon in the menu bar and toggle **Start when lid opens**.
-macOS asks for an administrator password when the setting is changed.
+Left-click the laptop icon in the menu bar to switch the setting immediately.
+Right-click it to see the current state, refresh it, or quit LidSwitch. macOS
+asks for an administrator password when the setting is changed.
 
 ## How it works
 
