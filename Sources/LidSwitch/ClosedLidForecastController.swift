@@ -7,6 +7,14 @@ import LidSwitchCore
 struct BatterySnapshot {
     let isOnBattery: Bool
     let chargePercent: Double
+    let forecastSource: ClosedLidForecastSource
+}
+
+enum ClosedLidForecastSource {
+    case measuredClosed
+    case modeledDisplayOff
+    case learnedOnAC
+    case baselineOnAC
 }
 
 final class ClosedLidForecastController {
@@ -16,6 +24,7 @@ final class ClosedLidForecastController {
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
     private var previousClamshellState: Bool?
+    private let learnedWattsKey = "lastPredictedClosedLidWatts"
 
     func start() {
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -42,13 +51,25 @@ final class ClosedLidForecastController {
     private func sampleAndPublish() {
         guard let measurement = readPowerMeasurement() else { return }
 
-        let snapshot = BatterySnapshot(
-            isOnBattery: measurement.isOnBattery,
-            chargePercent: measurement.chargePercent
-        )
         guard measurement.isOnBattery else {
             powerSamples.removeAll()
-            didUpdate?(snapshot, nil)
+            let learnedWatts = UserDefaults.standard.double(forKey: learnedWattsKey)
+            let hasLearnedWatts = learnedWatts >= 2 && learnedWatts <= 150
+            let predictedWatts = hasLearnedWatts ? learnedWatts : 8
+            let estimate = ActiveClosedLidEstimator.estimate(
+                remainingEnergyWh: measurement.remainingEnergyWh,
+                measuredSystemWatts: predictedWatts,
+                displayBrightness: 0,
+                isClamshellClosed: true
+            )
+            didUpdate?(
+                BatterySnapshot(
+                    isOnBattery: false,
+                    chargePercent: measurement.chargePercent,
+                    forecastSource: hasLearnedWatts ? .learnedOnAC : .baselineOnAC
+                ),
+                estimate
+            )
             return
         }
 
@@ -65,7 +86,14 @@ final class ClosedLidForecastController {
         }
 
         guard let medianWatts = median(powerSamples) else {
-            didUpdate?(snapshot, nil)
+            didUpdate?(
+                BatterySnapshot(
+                    isOnBattery: true,
+                    chargePercent: measurement.chargePercent,
+                    forecastSource: .modeledDisplayOff
+                ),
+                nil
+            )
             return
         }
 
@@ -75,7 +103,17 @@ final class ClosedLidForecastController {
             displayBrightness: measurement.displayBrightness,
             isClamshellClosed: measurement.isClamshellClosed
         )
-        didUpdate?(snapshot, estimate)
+        if let estimate {
+            UserDefaults.standard.set(estimate.predictedWatts, forKey: learnedWattsKey)
+        }
+        didUpdate?(
+            BatterySnapshot(
+                isOnBattery: true,
+                chargePercent: measurement.chargePercent,
+                forecastSource: measurement.isClamshellClosed ? .measuredClosed : .modeledDisplayOff
+            ),
+            estimate
+        )
     }
 
     private struct PowerMeasurement {

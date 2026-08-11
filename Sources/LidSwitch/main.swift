@@ -241,19 +241,26 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         case nil: stateDescription = "closed-lid state unknown"
         }
 
-        guard let batterySnapshot, batterySnapshot.isOnBattery else {
-            forecastItem.isHidden = true
+        guard let batterySnapshot else {
+            forecastItem.isHidden = false
+            forecastItem.title = "Closed-lid estimate: learning…"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,
                 forecastHours: nil
             )
-            statusItem.button?.toolTip = "LidSwitch: \(stateDescription)"
+            statusItem.button?.toolTip = "LidSwitch: measuring power use; \(stateDescription)"
             return
         }
 
         forecastItem.isHidden = false
         if let closedLidEstimate {
-            let basis = closedLidEstimate.usesClosedLidMeasurement ? "measured closed" : "modeled display off"
+            let basis: String
+            switch batterySnapshot.forecastSource {
+            case .measuredClosed: basis = "measured closed"
+            case .modeledDisplayOff: basis = "modeled display off"
+            case .learnedOnAC: basis = "last battery usage"
+            case .baselineOnAC: basis = "baseline until learned"
+            }
             forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,

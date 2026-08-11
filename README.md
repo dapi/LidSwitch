@@ -11,9 +11,10 @@ Left-click the single laptop icon to switch the mode immediately:
 After each switch, a short popover confirms what the Mac will do. Right-click
 the icon to see the current state, refresh it, manage helper access, or quit.
 
-While running on battery, the icon shows an estimated number of active hours
-with the lid closed. The number is drawn inside the laptop screen, so the menu
-bar item never grows wider. On AC power, the icon has no number.
+The icon shows an estimated number of active hours with the lid closed, both on
+battery and on AC power. The number is drawn inside the laptop screen, so the
+menu bar item never grows wider. On AC, LidSwitch uses the last learned battery
+consumption; before it has learned one, it uses a conservative baseline model.
 
 ## Requirements
 
@@ -61,6 +62,11 @@ lid open, it models closed-lid consumption by subtracting the internal display's
 brightness-dependent draw. If the Mac is already awake with its lid closed, it
 uses the directly measured power instead. The workload is assumed to remain
 similar, so the number changes as CPU/GPU activity changes.
+
+On AC power, the battery reports no discharge rate. LidSwitch therefore stores
+the most recent predicted closed-lid wattage learned on battery and applies it
+to the current charge. Until the first battery measurement is available, it
+uses an 8 W active-work baseline and marks that basis in the menu.
 
 During one-time setup, LidSwitch installs the helper at
 `/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` and validates a narrow
