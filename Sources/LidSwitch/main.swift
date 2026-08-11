@@ -384,7 +384,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             forecastItem.title = "Active with lid closed: ≈ \(closedLidEstimate.hours) h (\(basis))"
             statusItem.button?.image = StatusIconRenderer.image(
                 keepsWorking: keepsWorkingWithLidClosed,
-                forecastHours: closedLidEstimate.hours
+                forecastHours: keepsWorkingWithLidClosed == true
+                    ? closedLidEstimate.hours
+                    : nil
             )
             statusItem.button?.toolTip = nil
         } else {

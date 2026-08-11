@@ -6,7 +6,7 @@ MacBook keeps working or goes to sleep when its lid is closed.
 Left-click the single laptop icon to switch the mode immediately:
 
 - green screen — the Mac keeps working with its lid closed
-- yellow screen — the Mac is allowed to sleep when its lid closes
+- yellow half-closed screen — the Mac is allowed to sleep when its lid closes
 
 After each switch, a short popover confirms what the Mac will do. Right-click
 the icon to see the current state, refresh it, manage helper access, or quit.
@@ -17,9 +17,10 @@ the selection to both battery and power-adapter profiles.
 
 The icon shows an estimated number of active hours with the lid closed, both on
 battery and on AC power. The number is drawn inside the laptop screen, so the
-menu bar item never grows wider. On AC, LidSwitch uses the last learned battery
-consumption for the selected Energy Mode; before it has learned one, it uses a
-conservative baseline model.
+menu bar item never grows wider. It appears only in the green state, when
+closed-lid work is enabled; the yellow sleep state stays visually uncluttered.
+On AC, LidSwitch uses the last learned battery consumption for the selected
+Energy Mode; before it has learned one, it uses a conservative baseline model.
 
 ## Requirements
 

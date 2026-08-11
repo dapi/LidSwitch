@@ -5,8 +5,15 @@ enum StatusIconRenderer {
         let text = forecastHours.map { String(min(999, max(0, $0))) }
         let size = NSSize(width: 22, height: 18)
         let image = NSImage(size: size, flipped: false) { _ in
-            let screenRect = NSRect(x: 2.5, y: 4.5, width: 17, height: 12)
-            let screen = NSBezierPath(roundedRect: screenRect, xRadius: 2, yRadius: 2)
+            let isHalfClosed = keepsWorking == false
+            let screenRect = isHalfClosed
+                ? NSRect(x: 2.5, y: 4.5, width: 17, height: 7.5)
+                : NSRect(x: 2.5, y: 4.5, width: 17, height: 12)
+            let screen = NSBezierPath(
+                roundedRect: screenRect,
+                xRadius: isHalfClosed ? 1.5 : 2,
+                yRadius: isHalfClosed ? 1.5 : 2
+            )
 
             switch keepsWorking {
             case true: NSColor.systemGreen.setFill()
