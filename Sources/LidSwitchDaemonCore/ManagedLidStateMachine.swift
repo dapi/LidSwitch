@@ -12,6 +12,7 @@ public enum ManagedLidState: Equatable, Sendable {
 public enum ManagedLidAction: Equatable, Sendable {
     case setSleepDisabled(Bool)
     case notifyLidClosed(eventID: String, policy: ManagedLidPolicy)
+    case notifySleepCancelled(eventID: String)
     case armLeaseDeadline(generation: String)
     case armFeedbackDeadline(eventID: String)
     case cancelFeedbackDeadline(eventID: String)
@@ -46,6 +47,15 @@ public struct ManagedLidStateMachine: Sendable {
     ) -> [ManagedLidAction] {
         let previous = lidIsClosed
         lidIsClosed = isClosed
+
+        if isClosed == false,
+           case .pendingSleep(let policy, let generation, let eventID) = state {
+            state = .active(policy: policy, generation: generation)
+            return [
+                .cancelFeedbackDeadline(eventID: eventID),
+                .notifySleepCancelled(eventID: eventID)
+            ]
+        }
 
         guard previous == false, isClosed == true else { return [] }
         guard case .active(let policy, let generation) = state else { return [] }

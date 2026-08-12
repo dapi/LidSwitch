@@ -19,6 +19,7 @@ public enum DaemonLidPolicy: Int, CaseIterable, Equatable, Sendable {
 
 @objc public protocol LidSwitchAppXPCProtocol {
     func lidDidClose(eventID: String, policyRaw: Int)
+    func sleepCancelled(eventID: String)
 }
 
 public enum LidSwitchDaemonConstants {

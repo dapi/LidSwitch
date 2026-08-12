@@ -132,16 +132,19 @@ only while closed-lid work is enabled.
 2. On AC, select work, start a visible/logged task, close the lid, and verify one
    `Glass` sound occurs and the task continues. Duplicate clamshell events must
    not produce repeated sounds.
-3. Select sleep, close the lid, and verify one distinct `Funk` sound completes
-   before the Mac sleeps. Reopen and confirm the lease/policy becomes active.
-4. Repeat step 3 muted and at zero volume: no audible bypass, but sleep still
+3. Select sleep, close the lid, and verify the distinct `Sosumi` warning repeats
+   for 15 seconds. Open the lid during that warning and confirm the warning
+   stops and sleep is cancelled.
+4. Close the lid again after cancellation. Confirm a new 15-second warning
+   starts and the previous event does not cause a delayed sleep.
+5. Repeat step 3 muted and at zero volume: no audible bypass, but sleep still
    follows the playback completion/fail-safe path.
-5. In sleep policy, force-quit the app immediately after closing. Confirm the
+6. In sleep policy, force-quit the app immediately after closing. Confirm the
    Mac sleeps rather than remaining awake. Repeat with daemon connection loss.
-6. Restart/kill the daemon while managed control is active. Confirm native sleep
+7. Restart/kill the daemon while managed control is active. Confirm native sleep
    is restored; work policy may safely degrade to sleep.
-7. Repeat work/sleep cases on battery in a ventilated stationary location.
-8. Never perform this test in a bag or enclosed space. Monitor temperature and
+8. Repeat work/sleep cases on battery in a ventilated stationary location.
+9. Never perform this test in a bag or enclosed space. Monitor temperature and
    stop immediately if the Mac becomes unusually hot.
 
 ## Pass criteria

@@ -128,12 +128,15 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         serviceManagedDaemonManager.didCloseLid = { [weak self] eventID, policy in
             guard let self else { return }
             if policy == .sleep {
-                self.outcomeSoundPlayer.play(policy: policy) { [weak self] in
+                self.outcomeSoundPlayer.play(policy: policy, eventID: eventID) { [weak self] in
                     self?.serviceManagedDaemonManager.feedbackDidFinish(eventID: eventID)
                 }
             } else {
-                self.outcomeSoundPlayer.play(policy: policy)
+                self.outcomeSoundPlayer.play(policy: policy, eventID: eventID)
             }
+        }
+        serviceManagedDaemonManager.didCancelSleep = { [weak self] eventID in
+            self?.outcomeSoundPlayer.cancel(eventID: eventID)
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             self,

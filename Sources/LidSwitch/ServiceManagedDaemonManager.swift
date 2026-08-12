@@ -19,6 +19,7 @@ final class ServiceManagedDaemonManager: NSObject, LidSwitchAppXPCProtocol {
 
     var didChange: (() -> Void)?
     var didCloseLid: ((String, DaemonLidPolicy) -> Void)?
+    var didCancelSleep: ((String) -> Void)?
 
     var status: ServiceManagedDaemonStatus {
         switch service.status {
@@ -124,6 +125,10 @@ final class ServiceManagedDaemonManager: NSObject, LidSwitchAppXPCProtocol {
     func lidDidClose(eventID: String, policyRaw: Int) {
         guard let policy = DaemonLidPolicy(rawValue: policyRaw) else { return }
         DispatchQueue.main.async { [weak self] in self?.didCloseLid?(eventID, policy) }
+    }
+
+    func sleepCancelled(eventID: String) {
+        DispatchQueue.main.async { [weak self] in self?.didCancelSleep?(eventID) }
     }
 
     func checkVersion(
