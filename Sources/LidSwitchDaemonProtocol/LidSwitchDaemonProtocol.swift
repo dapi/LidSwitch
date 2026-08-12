@@ -27,7 +27,7 @@ public enum LidSwitchDaemonConstants {
     public static let daemonIdentifier = "me.dapi.LidSwitch.Daemon"
     public static let machServiceName = "me.dapi.LidSwitch.Daemon.XPC"
     public static let plistName = "me.dapi.LidSwitch.Daemon.plist"
-    public static let protocolVersion = "managed-lid-v1"
+    public static let protocolVersion = "managed-lid-v2"
 }
 
 public struct PeerCodeSigningRequirement: Sendable {

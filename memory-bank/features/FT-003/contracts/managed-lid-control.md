@@ -47,7 +47,7 @@ must_not_define:
 | Field | Value |
 | --- | --- |
 | Status | accepted |
-| Version | `managed-lid-v1` |
+| Version | `managed-lid-v2` |
 | Compatibility | breaking relative to `m2-spike-v1/v2`; exact handshake required |
 | Source authority | ADR-001 and FT-003 design |
 
