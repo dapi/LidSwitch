@@ -53,8 +53,9 @@ Energy modes remain on the existing helper boundary.
   for `/usr/bin/pmset` and `IOPMSleepSystem`, and owns lease/feedback timers.
 - `SOL-04`: App keeps a persistent authenticated XPC connection, reactivates its
   desired policy after launch/wake, and plays built-in `Glass` for work and
-  `Funk` for sleep through `NSSound`. A sound delegate acknowledges completion
-  using the daemon-generated event ID.
+  repeating `Sosumi` warning for sleep through `NSSound`. A sound delegate
+  acknowledges completion using the daemon-generated event ID; reopening the lid
+  cancels the event and stops the warning.
 - `SOL-05`: In sleep policy, daemon starts a bounded feedback deadline. On valid
   acknowledgement or deadline it restores `disablesleep=0` before requesting
   sleep. On connection/heartbeat loss it restores native sleep immediately and,
@@ -106,6 +107,7 @@ flowchart LR
 | unknown/initial | any | any | establish state; no outcome |
 | open | closed | work | one work callback/sound; keep `disablesleep=1` |
 | open | closed | sleep | one sleep callback; await ack until deadline; then safe sleep |
+| closed | open | sleep pending | cancel warning/deadline; remain active in sleep policy; no sleep |
 | open | closed | no valid lease | native sleep remains enabled; no app outcome |
 | closed | closed | any | duplicate; no new event |
 | closed | open | active lease | arm next closure |
@@ -126,7 +128,7 @@ sequenceDiagram
         D->>D: remain awake under valid lease
     else sleep
         D->>D: start feedback deadline [SOL-05]
-        A->>A: play Funk to completion
+        A->>A: repeat Sosumi warning for 15 seconds
         A->>D: feedbackDidFinish(eventID) [CTR-04]
         D->>D: set disablesleep=0
         D->>OS: IOPMSleepSystem
@@ -134,6 +136,9 @@ sequenceDiagram
         D->>D: set disablesleep=0 [FM-03..05]
         D->>OS: request sleep when closed/pending
     end
+    OS->>D: pending sleep lid opens
+    D->>A: sleepCancelled(eventID) [CTR-05a]
+    A->>A: stop warning; remain awake
 ```
 
 ## Alternatives Considered
@@ -176,6 +181,8 @@ sequenceDiagram
   `disablesleep=0`.
 - `INV-06`: No active lease or daemon restart implies native sleep enabled; a
   privileged keep-awake state is never persisted.
+- `INV-07`: Opening the lid while `pendingSleep` cancels that event and cannot
+  request sleep; reclosing creates a new event ID.
 
 ## Failure Modes
 
@@ -188,6 +195,7 @@ sequenceDiagram
 | `FM-05` | Heartbeat expires | Same fail-safe as connection loss |
 | `FM-06` | Stale/duplicate acknowledgement | Ignore; never affect a newer event or lease |
 | `FM-07` | `IOPMSleepSystem` fails | Native lid sleep is already restored; log failure for hardware evidence |
+| `FM-08` | Lid opens during warning | Cancel event/deadline, stop app warning, retain active sleep policy |
 
 ## Rollout / Backout
 

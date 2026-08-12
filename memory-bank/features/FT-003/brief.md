@@ -54,6 +54,9 @@ visible, so the action lacks immediate outcome feedback.
   system sleep after playback; in the work policy it must keep running.
 - `REQ-07`: Loss of the LidSwitch control process must fail safe: a sleep-policy
   Mac must not remain indefinitely awake with its lid closed.
+- `REQ-08`: In sleep policy, LidSwitch repeats an alarming system sound for 15
+  seconds; opening the lid during that warning cancels pending sleep and stops
+  the warning, while a later close starts a new warning.
 
 ### Non-Scope
 
@@ -117,6 +120,8 @@ visible, so the action lacks immediate outcome feedback.
   then LidSwitch explicitly requests sleep.
 - `EC-07`: Killing or disconnecting the controlling process in sleep policy
   restores a safe path to sleep instead of leaving the closed Mac awake.
+- `EC-08`: Opening the lid during the 15-second sleep warning cancels sleep;
+  reclosing starts a new warning with a new event.
 
 ### Traceability Matrix
 
@@ -132,14 +137,16 @@ visible, so the action lacks immediate outcome feedback.
 - `SC-01`: Given displayed policy is work and lid was open, closing it produces
   exactly one work sound.
 - `SC-02`: Given displayed policy is sleep and lid was open, closing it prevents
-  automatic sleep, plays exactly one distinct sleep sound to completion and
-  then LidSwitch explicitly requests system sleep.
+  automatic sleep, repeats one distinct alarming sleep sound for 15 seconds and
+  then LidSwitch explicitly requests system sleep if the lid remains closed.
 - `SC-03`: System mute or zero output volume prevents audible feedback without
   any application bypass.
 - `NEG-01`: Initial closed observation, repeated closed observation, lid opening
   and unknown policy produce no misleading sound.
 - `NEG-02`: If the controlling app/connection fails during sleep policy, the
   fail-safe controller restores native sleep or explicitly sleeps the Mac.
+- `NEG-03`: If the lid opens during the sleep warning, LidSwitch cancels pending
+  sleep and a subsequent close receives a new event ID.
 
 ### Checks And Evidence
 

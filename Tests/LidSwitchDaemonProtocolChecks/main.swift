@@ -56,9 +56,15 @@ do {
         throw CheckFailure.failed("App callback protocol exposes no required instance method")
     }
     defer { free(callbackDescriptions) }
-    try require(callbackMethodCount == 1, "App callback protocol must contain exactly one operation")
-    let callbackSelector = callbackDescriptions.pointee.name.map(NSStringFromSelector)
-    try require(callbackSelector == "lidDidCloseWithEventID:policyRaw:", "Unexpected app callback operation")
+    try require(callbackMethodCount == 2, "App callback protocol must contain exactly two operations")
+    let callbackSelectors = Set((0..<Int(callbackMethodCount)).compactMap { index -> String? in
+        guard let name = callbackDescriptions[index].name else { return nil }
+        return NSStringFromSelector(name)
+    })
+    try require(callbackSelectors == [
+        "lidDidCloseWithEventID:policyRaw:",
+        "sleepCancelledWithEventID:"
+    ], "Unexpected app callback operations: \(callbackSelectors)")
     try require(
         DaemonLidPolicy.allCases.map(\.rawValue) == [1, 2],
         "Managed policy transport values must remain work=1 and sleep=2"

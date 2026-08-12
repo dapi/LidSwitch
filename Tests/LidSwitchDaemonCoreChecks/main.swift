@@ -5,6 +5,7 @@ testInitialAndDuplicateObservations()
 testWorkClose()
 testSleepAcknowledgementIsTerminal()
 testFeedbackDeadlineIsTerminal()
+testOpeningCancelsPendingSleep()
 testLeaseLossFailsSafe()
 testStaleGenerationAndEventAreIgnored()
 
@@ -59,6 +60,22 @@ private func testFeedbackDeadlineIsTerminal() {
         .requestSystemSleep
     ], "Deadline fails safe")
     check(machine.feedbackFinished(eventID: "sleep-2", generation: "g1").isEmpty, "Late acknowledgement is ignored")
+}
+
+private func testOpeningCancelsPendingSleep() {
+    var machine = ManagedLidStateMachine()
+    _ = machine.activate(policy: .sleep, generation: "g-open")
+    _ = machine.observeLid(isClosed: false, makeEventID: { "unused" })
+    _ = machine.observeLid(isClosed: true, makeEventID: { "sleep-open" })
+    check(machine.observeLid(isClosed: false, makeEventID: { "unused" }) == [
+        .cancelFeedbackDeadline(eventID: "sleep-open"),
+        .notifySleepCancelled(eventID: "sleep-open")
+    ], "Opening lid cancels pending sleep")
+    check(machine.feedbackDeadlineExpired(eventID: "sleep-open").isEmpty, "Cancelled deadline cannot sleep")
+    check(machine.observeLid(isClosed: true, makeEventID: { "sleep-again" }) == [
+        .notifyLidClosed(eventID: "sleep-again", policy: .sleep),
+        .armFeedbackDeadline(eventID: "sleep-again")
+    ], "Reclosing starts a new sleep warning")
 }
 
 private func testLeaseLossFailsSafe() {

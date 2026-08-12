@@ -5,7 +5,8 @@ import IOKit.pwr_mgt
 import LidSwitchDaemonCore
 import LidSwitchDaemonProtocol
 
-private let feedbackDeadline: TimeInterval = 2
+private let sleepWarningDuration: TimeInterval = 15
+private let feedbackDeadline: TimeInterval = sleepWarningDuration + 1
 private let leaseDeadline: TimeInterval = 15
 
 private final class PowerEffects {
@@ -143,6 +144,8 @@ private final class ManagedLidRuntime {
                 succeeded = effects.setSleepDisabled(disabled) && succeeded
             case .notifyLidClosed(let eventID, let policy):
                 client?.lidDidClose(eventID: eventID, policyRaw: policy.rawValue)
+            case .notifySleepCancelled(let eventID):
+                client?.sleepCancelled(eventID: eventID)
             case .armLeaseDeadline(let generation):
                 leaseTimer?.cancel()
                 let timer = DispatchWorkItem { [weak self] in
