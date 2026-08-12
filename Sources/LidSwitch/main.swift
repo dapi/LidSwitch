@@ -149,8 +149,22 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             UserDefaults.standard.set(readSleepDisabled() ?? false, forKey: desiredPolicyKey)
         }
 
+        ensureManagedDaemonRegistration()
         refresh()
         forecastController.start()
+    }
+
+    private func ensureManagedDaemonRegistration() {
+        guard serviceManagedDaemonManager.status == .notRegistered else { return }
+        do {
+            try serviceManagedDaemonManager.register()
+            if serviceManagedDaemonManager.status == .requiresApproval {
+                serviceManagedDaemonManager.openApprovalSettings()
+            }
+        } catch {
+            // The menu exposes the same setup action with an explanatory error.
+            updateM2DaemonUI()
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
