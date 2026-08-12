@@ -12,7 +12,7 @@ Left-click the single laptop icon to switch the mode immediately:
 - green screen with a number — the Mac keeps working with its lid closed; the
   number is the estimated battery runtime in hours
 - yellow screen with `Zz` — the Mac is allowed to sleep when its lid closes
-- gray screen with `?` — macOS did not report the current setting
+- gray screen with `?` — managed lid control is not ready or confirmed
 
 After each switch, a short popover confirms what the Mac will do. Right-click
 the icon to see the current state, refresh it, manage helper access, or quit.
@@ -77,15 +77,13 @@ cp -R dist/LidSwitch.app ~/Applications/
 open ~/Applications/LidSwitch.app
 ```
 
-macOS asks for one-time approval of LidSwitch's narrowly scoped privileged
-helper through its system authorization UI. Touch ID is available when macOS
-offers it, with an administrator password as the fallback. Subsequent switches
-do not ask again. An outdated helper is detected and replaced during this
-one-time setup.
+macOS asks for one-time approval of LidSwitch's embedded managed-lid daemon in
+Login Items. The daemon safely coordinates lid events and sleep. A separate
+narrow helper is used only when changing Energy Mode.
 
 The installed helper is owned by `root` and accepts only a fixed allowlist of
-operations: check its version, change closed-lid work, or select one of the
-three energy modes. It does not accept arbitrary shell commands or power
+operations: check its version or select one of the three energy modes. It does
+not accept arbitrary shell commands or power
 settings from the app. Right-click the icon and choose **Remove passwordless
 switching…** to remove it and its permission.
 
@@ -96,10 +94,13 @@ switching…** to remove it and its permission.
 
 ## How it works
 
-The helper changes macOS's system-wide `disablesleep` power setting through
-`pmset`. The app reads the resulting `SleepDisabled` state directly from the
-`IOPMrootDomain` registry, so its color and menu show the actual macOS state
-rather than a separately saved preference.
+The embedded root daemon owns the system-wide `disablesleep` setting only while
+the app maintains an authenticated heartbeat lease. It observes clamshell
+changes and tells the app to play `Glass` for continued work or `Funk` before
+sleep. In sleep mode the app acknowledges sound completion; the daemon restores
+native sleep and explicitly requests system sleep. If the app disconnects or a
+deadline expires, the daemon restores native sleep first, so a closed Mac is not
+left awake indefinitely.
 
 The forecast uses a rolling median of live battery power measurements. With the
 lid open, it models closed-lid consumption by subtracting the internal display's
@@ -122,6 +123,8 @@ run that root-owned helper without another password prompt.
 
 ```sh
 swift run LidSwitchCoreChecks
+swift run LidSwitchDaemonCoreChecks
+swift run LidSwitchDaemonProtocolChecks
 ```
 
 See [QA.md](QA.md) for the automated coverage and the Apple silicon/macOS 15+

@@ -15,7 +15,8 @@ battery, clamshell, backlight, or `IOPMrootDomain` behavior.
 | macOS | Latest macOS 15.x and the newest supported macOS release |
 | Power source | Battery and AC adapter |
 | Lid | Open; closed while the Mac remains active; reopen after each closed-lid run |
-| Helper | Not installed, newly installed, installed/current, outdated or invalid, removed |
+| Managed daemon | Not registered, requires approval, enabled, app disconnected, daemon restarted, removed |
+| Helper | Not installed, installed/current and removed for Energy Mode only |
 | Energy mode | Low Power, Automatic, High Power (or the expected rejection on unsupported hardware) |
 | Forecast | Learning, modeled display-off, measured closed-lid, learned-on-AC, baseline-on-AC |
 | UI | Green hours, yellow `Zz`, gray `?`, left click, Control/right click, hover card, menu, confirmations, errors |
@@ -30,6 +31,8 @@ full Xcode and XCTest are not required.
 
 ```sh
 swift run LidSwitchCoreChecks
+swift run LidSwitchDaemonCoreChecks
+swift run LidSwitchDaemonProtocolChecks
 swift build
 ```
 
@@ -42,7 +45,10 @@ The checks cover:
   energy-mode transitions;
 - battery learning and AC learned/baseline selection for every energy mode;
 - rejection of invalid power samples and learned wattages;
-- the helper's exact operation allowlist and fixed `pmset` argument mapping.
+- the helper's energy-only operation allowlist and fixed `pmset` mapping;
+- managed lease activation, lid transitions, acknowledgement/deadline races,
+  stale events and fail-safe lease loss;
+- the exact bidirectional XPC selectors, signing requirements and launchd plist.
 
 After building, the non-mutating helper protocol can also be smoke-tested:
 
@@ -68,14 +74,14 @@ directly as root during an automated check.
    state and forecast as the icon/menu, and that leaving closes it.
 5. Right-click and Control-click. Both must open the menu without changing the
    setting. `Refresh` and Command-R must refresh it.
-6. Left-click. It must request helper setup when needed, switch the actual
-   system state, and show a short confirmation. Canceling authorization must
-   leave the state unchanged and show no false success.
+6. Left-click before daemon approval. It must explain that managed lid control
+   is required and must not show false success. After approval, it switches the
+   effective daemon policy and shows a short confirmation.
 
 ### 2. Privileged helper lifecycle
 
-1. With no helper installed, choose setup, approve once, and verify subsequent
-   closed-lid and energy-mode switches do not request a password.
+1. With no helper installed, choose setup for an Energy Mode, approve once, and
+   verify subsequent energy-mode switches do not request a password.
 2. Verify `/Library/PrivilegedHelperTools/me.dapi.LidSwitch.Helper` is executable,
    owned by `root:wheel`, and `/etc/sudoers.d/lidswitch` is `root:wheel` mode
    `0440`.
@@ -121,19 +127,33 @@ only while closed-lid work is enabled.
 
 ### 5. Actual lid behavior and safety
 
-1. On AC, enable closed-lid work, start a visible/logged task, close the lid, and
-   verify the task continues. Reopen and confirm the UI still matches macOS.
-2. Disable closed-lid work, repeat, and verify normal sleep occurs.
-3. Repeat both cases on battery in a ventilated stationary location.
-4. Never perform this test in a bag or enclosed space. Monitor temperature and
+1. Register and approve **Managed lid control**. Confirm the daemon version is
+   `managed-lid-v1` and the menu shows a confirmed policy.
+2. On AC, select work, start a visible/logged task, close the lid, and verify one
+   `Glass` sound occurs and the task continues. Duplicate clamshell events must
+   not produce repeated sounds.
+3. Select sleep, close the lid, and verify one distinct `Funk` sound completes
+   before the Mac sleeps. Reopen and confirm the lease/policy becomes active.
+4. Repeat step 3 muted and at zero volume: no audible bypass, but sleep still
+   follows the playback completion/fail-safe path.
+5. In sleep policy, force-quit the app immediately after closing. Confirm the
+   Mac sleeps rather than remaining awake. Repeat with daemon connection loss.
+6. Restart/kill the daemon while managed control is active. Confirm native sleep
+   is restored; work policy may safely degrade to sleep.
+7. Repeat work/sleep cases on battery in a ventilated stationary location.
+8. Never perform this test in a bag or enclosed space. Monitor temperature and
    stop immediately if the Mac becomes unusually hot.
 
 ## Pass criteria
 
 - No crash, hang, duplicate status item, or false success confirmation.
-- UI state always follows the values read back from macOS.
-- Helper accepts only its six documented operations and requires no repeated
+- UI state always follows the effective managed daemon lease, not raw
+  `SleepDisabled`.
+- Helper accepts only its four documented energy/check operations and requires no repeated
   prompt after valid installation.
+- Work and sleep sounds are distinct and occur once; sleep begins only after
+  sound completion or bounded fail-safe.
+- App/XPC/daemon failure never leaves a closed Mac indefinitely awake.
 - Forecast source changes correctly across battery/AC, lid, wake, and energy-mode
   transitions; displayed hours remain between 1 and 999.
 - Cancel and error paths do not change settings or claim success.

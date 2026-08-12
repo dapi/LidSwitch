@@ -34,13 +34,34 @@ do {
         throw CheckFailure.failed("XPC protocol exposes no required instance method")
     }
     defer { free(methodDescriptions) }
-    try require(methodCount == 1, "XPC protocol surface must contain exactly one operation")
-    guard let methodName = methodDescriptions.pointee.name else {
-        throw CheckFailure.failed("XPC operation has no Objective-C selector")
+    try require(methodCount == 4, "Daemon XPC protocol surface must contain exactly four operations")
+    let daemonSelectors = Set((0..<Int(methodCount)).compactMap { index -> String? in
+        guard let name = methodDescriptions[index].name else { return nil }
+        return NSStringFromSelector(name)
+    })
+    try require(daemonSelectors == [
+        "checkVersionWithReply:",
+        "activateWithPolicyRaw:protocolVersion:withReply:",
+        "heartbeatWithReply:",
+        "feedbackDidFinishWithEventID:withReply:"
+    ], "Unexpected daemon XPC operations: \(daemonSelectors)")
+
+    var callbackMethodCount: UInt32 = 0
+    guard let callbackDescriptions = protocol_copyMethodDescriptionList(
+        LidSwitchAppXPCProtocol.self,
+        true,
+        true,
+        &callbackMethodCount
+    ) else {
+        throw CheckFailure.failed("App callback protocol exposes no required instance method")
     }
+    defer { free(callbackDescriptions) }
+    try require(callbackMethodCount == 1, "App callback protocol must contain exactly one operation")
+    let callbackSelector = callbackDescriptions.pointee.name.map(NSStringFromSelector)
+    try require(callbackSelector == "lidDidCloseWithEventID:policyRaw:", "Unexpected app callback operation")
     try require(
-        NSStringFromSelector(methodName) == "checkVersionWithReply:",
-        "Unexpected XPC operation"
+        DaemonLidPolicy.allCases.map(\.rawValue) == [1, 2],
+        "Managed policy transport values must remain work=1 and sleep=2"
     )
 
     let adHoc = PeerCodeSigningRequirement.forPeer(
@@ -87,7 +108,8 @@ do {
         "BundleProgram",
         "AssociatedBundleIdentifiers",
         "MachServices",
-        "EnableTransactions"
+        "EnableTransactions",
+        "KeepAlive"
     ]
     try require(Set(plist.keys) == allowedKeys, "Launch daemon plist surface changed")
     try require(
@@ -109,10 +131,8 @@ do {
         "Unexpected Mach service surface"
     )
     try require(plist["EnableTransactions"] as? Bool == true, "Transactions must be enabled")
-    try require(
-        ["m2-spike-v1", "m2-spike-v2"].contains(LidSwitchDaemonConstants.protocolVersion),
-        "Unknown M2 protocol fixture version"
-    )
+    try require(plist["KeepAlive"] as? Bool == true, "Daemon must restart to restore native sleep after a crash")
+    try require(LidSwitchDaemonConstants.protocolVersion == "managed-lid-v1", "Unexpected managed-lid protocol version")
 
     print("All LidSwitchDaemonProtocol checks passed")
 } catch {

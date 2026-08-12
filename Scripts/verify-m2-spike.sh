@@ -11,11 +11,14 @@ swift build --package-path "$repo_dir" -c "$configuration" \
     --product LidSwitchCoreChecks >/dev/null
 swift build --package-path "$repo_dir" -c "$configuration" \
     --product LidSwitchDaemonProtocolChecks >/dev/null
+swift build --package-path "$repo_dir" -c "$configuration" \
+    --product LidSwitchDaemonCoreChecks >/dev/null
 
 /usr/bin/plutil -lint "$daemon_plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :Label' "$daemon_plist")" == "me.dapi.LidSwitch.Daemon" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :BundleProgram' "$daemon_plist")" == "Contents/MacOS/LidSwitchDaemon" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :MachServices:me.dapi.LidSwitch.Daemon.XPC' "$daemon_plist")" == "true" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :KeepAlive' "$daemon_plist")" == "true" ]]
 
 [[ -x "$app_dir/Contents/MacOS/LidSwitch" ]]
 [[ -x "$app_dir/Contents/MacOS/LidSwitchDaemon" ]]
@@ -48,15 +51,13 @@ fi
 status_output="$($app_dir/Contents/MacOS/LidSwitch --m2-daemon-status)"
 [[ "$status_output" == *"auth:"* ]]
 protocol_version="$($app_dir/Contents/MacOS/LidSwitch --m2-protocol-version)"
-case "${LIDSWITCH_M2_PROTOCOL_VARIANT:-v1}" in
-    v1) [[ "$protocol_version" == "m2-spike-v1" ]] ;;
-    v2) [[ "$protocol_version" == "m2-spike-v2" ]] ;;
-esac
+[[ "$protocol_version" == "managed-lid-v1" ]]
 
 "$repo_dir/.build/$configuration/LidSwitchCoreChecks"
 "$repo_dir/.build/$configuration/LidSwitchDaemonProtocolChecks"
+"$repo_dir/.build/$configuration/LidSwitchDaemonCoreChecks"
 
-print "PASS: M2 bundle layout, launchd plist, signatures, peer identity checks, status path, and existing core checks"
+print "PASS: managed-lid bundle layout, launchd plist, signatures, peer identity, protocol, and core checks"
 print "Status: $status_output"
 if [[ "$status_output" == *"ad-hoc development build"* ]]; then
     print "NOTE: live registration and production peer authentication still require a notarized Developer ID build"

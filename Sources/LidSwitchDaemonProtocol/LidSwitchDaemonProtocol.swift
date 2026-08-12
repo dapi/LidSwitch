@@ -1,8 +1,24 @@
 import Foundation
 import Security
 
+public enum DaemonLidPolicy: Int, CaseIterable, Equatable, Sendable {
+    case work = 1
+    case sleep = 2
+}
+
 @objc public protocol LidSwitchDaemonXPCProtocol {
     func checkVersion(withReply reply: @escaping (String) -> Void)
+    func activate(
+        policyRaw: Int,
+        protocolVersion: String,
+        withReply reply: @escaping (Bool, Int, String) -> Void
+    )
+    func heartbeat(withReply reply: @escaping (Bool) -> Void)
+    func feedbackDidFinish(eventID: String, withReply reply: @escaping (Bool) -> Void)
+}
+
+@objc public protocol LidSwitchAppXPCProtocol {
+    func lidDidClose(eventID: String, policyRaw: Int)
 }
 
 public enum LidSwitchDaemonConstants {
@@ -10,11 +26,7 @@ public enum LidSwitchDaemonConstants {
     public static let daemonIdentifier = "me.dapi.LidSwitch.Daemon"
     public static let machServiceName = "me.dapi.LidSwitch.Daemon.XPC"
     public static let plistName = "me.dapi.LidSwitch.Daemon.plist"
-    #if LIDSWITCH_M2_PROTOCOL_V2
-    public static let protocolVersion = "m2-spike-v2"
-    #else
-    public static let protocolVersion = "m2-spike-v1"
-    #endif
+    public static let protocolVersion = "managed-lid-v1"
 }
 
 public struct PeerCodeSigningRequirement: Sendable {

@@ -138,8 +138,6 @@ private func testForecastEngine() {
 private func testHelperAllowlist() {
     let expected = Set([
         "check-v3",
-        "enable-closed-lid-work",
-        "disable-closed-lid-work",
         "set-energy-low",
         "set-energy-automatic",
         "set-energy-high"
@@ -148,8 +146,6 @@ private func testHelperAllowlist() {
     check(PrivilegedHelperOperation(rawValue: "pmset") == nil, "Reject arbitrary helper commands")
     check(PrivilegedHelperOperation(rawValue: "set-energy-high extra") == nil, "Reject appended helper arguments")
     check(PrivilegedHelperOperation.check.pmsetArguments == nil, "Version check must not invoke pmset")
-    check(PrivilegedHelperOperation.enableClosedLidWork.pmsetArguments == ["-a", "disablesleep", "1"], "Map enable operation")
-    check(PrivilegedHelperOperation.disableClosedLidWork.pmsetArguments == ["-a", "disablesleep", "0"], "Map disable operation")
     check(PrivilegedHelperOperation.setEnergyLow.pmsetArguments == ["-a", "powermode", "0"], "Map low-power operation")
     check(PrivilegedHelperOperation.setEnergyAutomatic.pmsetArguments == ["-a", "powermode", "1"], "Map automatic operation")
     check(PrivilegedHelperOperation.setEnergyHigh.pmsetArguments == ["-a", "powermode", "2"], "Map high-power operation")

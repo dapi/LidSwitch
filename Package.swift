@@ -16,6 +16,7 @@ let package = Package(
     targets: [
         .target(name: "LidSwitchCore"),
         .target(name: "LidSwitchDaemonProtocol"),
+        .target(name: "LidSwitchDaemonCore"),
         .executableTarget(
             name: "LidSwitch",
             dependencies: [
@@ -31,7 +32,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "LidSwitchDaemon",
-            dependencies: ["LidSwitchDaemonProtocol"]
+            dependencies: ["LidSwitchDaemonProtocol", "LidSwitchDaemonCore"]
         ),
         .executableTarget(
             name: "LidSwitchUnauthorizedProbe",
@@ -46,6 +47,11 @@ let package = Package(
             name: "LidSwitchDaemonProtocolChecks",
             dependencies: ["LidSwitchDaemonProtocol"],
             path: "Tests/LidSwitchDaemonProtocolChecks"
+        ),
+        .executableTarget(
+            name: "LidSwitchDaemonCoreChecks",
+            dependencies: ["LidSwitchDaemonCore"],
+            path: "Tests/LidSwitchDaemonCoreChecks"
         )
     ],
     swiftLanguageModes: [.v5]

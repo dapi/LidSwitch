@@ -65,17 +65,6 @@ struct PrivilegedHelperManager {
         try runWithAdministratorPrivileges(command)
     }
 
-    func setKeepsWorkingWithLidClosed(_ shouldKeepWorking: Bool) throws {
-        let operation: PrivilegedHelperOperation = shouldKeepWorking
-            ? .enableClosedLidWork
-            : .disableClosedLidWork
-        let result = run(arguments: ["-n", Self.installedHelperPath, operation.rawValue])
-        guard result.exitCode == 0 else {
-            let message = String(decoding: result.error, as: UTF8.self)
-            throw managerError(message.isEmpty ? "The privileged helper failed." : message)
-        }
-    }
-
     func setEnergyMode(_ mode: EnergyMode) throws {
         let result = run(arguments: [
             "-n",

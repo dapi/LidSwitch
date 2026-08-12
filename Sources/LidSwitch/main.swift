@@ -22,25 +22,26 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         action: #selector(manageHelperAccess),
         keyEquivalent: ""
     )
-    private let m2DaemonHeader = NSMenuItem(title: "M2 daemon spike", action: nil, keyEquivalent: "")
+    private let m2DaemonHeader = NSMenuItem(title: "Managed lid control", action: nil, keyEquivalent: "")
     private let m2DaemonStatusItem = NSMenuItem(title: "Status: Checking…", action: nil, keyEquivalent: "")
     private let m2DaemonRegisterItem = NSMenuItem(
-        title: "Register M2 daemon…",
+        title: "Set up managed lid control…",
         action: #selector(registerM2Daemon),
         keyEquivalent: ""
     )
     private let m2DaemonCheckItem = NSMenuItem(
-        title: "Check M2 daemon version",
+        title: "Check managed daemon version",
         action: #selector(checkM2DaemonVersion),
         keyEquivalent: ""
     )
     private let m2DaemonUnregisterItem = NSMenuItem(
-        title: "Unregister M2 daemon…",
+        title: "Remove managed lid control…",
         action: #selector(unregisterM2Daemon),
         keyEquivalent: ""
     )
     private let helperManager = PrivilegedHelperManager()
     private let serviceManagedDaemonManager = ServiceManagedDaemonManager()
+    private let outcomeSoundPlayer = LidOutcomeSoundPlayer()
     private let forecastController = ClosedLidForecastController()
     private var keepsWorkingWithLidClosed: Bool?
     private var energyMode: EnergyMode?
@@ -49,6 +50,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var confirmationPopover: NSPopover?
     private var hoverPopover: NSPopover?
     private var hoverWorkItem: DispatchWorkItem?
+    private let desiredPolicyKey = "managedClosedLidWork"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -118,6 +120,32 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             self?.updateUI()
         }
 
+        serviceManagedDaemonManager.didChange = { [weak self] in
+            guard let self else { return }
+            self.keepsWorkingWithLidClosed = self.serviceManagedDaemonManager.effectivePolicy.map { $0 == .work }
+            self.updateUI()
+        }
+        serviceManagedDaemonManager.didCloseLid = { [weak self] eventID, policy in
+            guard let self else { return }
+            if policy == .sleep {
+                self.outcomeSoundPlayer.play(policy: policy) { [weak self] in
+                    self?.serviceManagedDaemonManager.feedbackDidFinish(eventID: eventID)
+                }
+            } else {
+                self.outcomeSoundPlayer.play(policy: policy)
+            }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
+        if UserDefaults.standard.object(forKey: desiredPolicyKey) == nil {
+            UserDefaults.standard.set(readSleepDisabled() ?? false, forKey: desiredPolicyKey)
+        }
+
         refresh()
         forecastController.start()
     }
@@ -127,9 +155,22 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func refresh() {
-        keepsWorkingWithLidClosed = readSleepDisabled()
+        keepsWorkingWithLidClosed = serviceManagedDaemonManager.effectivePolicy.map { $0 == .work }
         energyMode = readEnergyMode()
+        if serviceManagedDaemonManager.status == .enabled,
+           serviceManagedDaemonManager.effectivePolicy == nil {
+            activateDesiredPolicy()
+        }
         updateUI()
+    }
+
+    @objc private func systemDidWake() {
+        activateDesiredPolicy()
+    }
+
+    private func activateDesiredPolicy(completion: ((Bool, String) -> Void)? = nil) {
+        let work = UserDefaults.standard.bool(forKey: desiredPolicyKey)
+        serviceManagedDaemonManager.activate(policy: work ? .work : .sleep, completion: completion)
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -178,38 +219,27 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func toggleClosedLidWork() {
-        keepsWorkingWithLidClosed = readSleepDisabled()
-        updateUI()
-
-        guard let currentState = keepsWorkingWithLidClosed else {
+        guard serviceManagedDaemonManager.status == .enabled else {
             showError(
-                title: "Couldn’t read the setting",
-                message: "macOS did not report whether system sleep is disabled."
+                title: "Managed lid control isn’t ready",
+                message: "Set up and approve the LidSwitch daemon before changing the closed-lid policy."
             )
             return
         }
-
-        do {
-            guard try ensureHelperInstalled() else { return }
-
-            let newState = !currentState
-            try helperManager.setKeepsWorkingWithLidClosed(newState)
-            keepsWorkingWithLidClosed = readSleepDisabled()
-            guard keepsWorkingWithLidClosed == newState else {
-                throw NSError(
-                    domain: "LidSwitch.PowerManagement",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "macOS did not apply the requested sleep setting."]
-                )
+        let current = serviceManagedDaemonManager.effectivePolicy == .work
+        let newState = !current
+        serviceManagedDaemonManager.activate(policy: newState ? .work : .sleep) { [weak self] accepted, message in
+            guard let self else { return }
+            guard accepted else {
+                self.showError(title: "Couldn’t update the setting", message: message)
+                return
             }
-            updateUI()
-            showConfirmation(newState
+            UserDefaults.standard.set(newState, forKey: self.desiredPolicyKey)
+            self.keepsWorkingWithLidClosed = newState
+            self.updateUI()
+            self.showConfirmation(newState
                 ? "Mac will keep working when the lid is closed"
-                : "Mac will sleep when the lid is closed")
-        } catch let error as NSError where error.code == -128 {
-            // The user cancelled the one-time administrator prompt.
-        } catch {
-            showError(title: "Couldn’t update the setting", message: error.localizedDescription)
+                : "Mac will play a sound, then sleep")
         }
     }
 
@@ -336,9 +366,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
 
         let alert = NSAlert()
-        alert.messageText = "Register the M2 spike daemon?"
-        alert.informativeText = "This registers the embedded check-version daemon through macOS Service Management. It does not replace or remove the current LidSwitch helper. An administrator must approve it in Login Items."
-        alert.addButton(withTitle: "Register")
+        alert.messageText = "Set up managed lid control?"
+        alert.informativeText = "This registers the embedded LidSwitch daemon. It safely holds lid sleep until feedback finishes and restores native sleep if the app disconnects. macOS may require approval in Login Items."
+        alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
@@ -348,21 +378,22 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             if serviceManagedDaemonManager.status == .requiresApproval {
                 serviceManagedDaemonManager.openApprovalSettings()
             } else {
-                showConfirmation("M2 daemon registration requested")
+                activateDesiredPolicy()
+                showConfirmation("Managed lid control registration requested")
             }
         } catch {
             updateM2DaemonUI()
             if serviceManagedDaemonManager.status == .requiresApproval {
                 serviceManagedDaemonManager.openApprovalSettings()
             } else {
-                showError(title: "Couldn’t register the M2 daemon", message: error.localizedDescription)
+                showError(title: "Couldn’t set up managed lid control", message: error.localizedDescription)
             }
         }
     }
 
     @objc private func checkM2DaemonVersion() {
         m2DaemonCheckItem.isEnabled = false
-        m2DaemonCheckItem.title = "Checking M2 daemon…"
+        m2DaemonCheckItem.title = "Checking managed daemon…"
         serviceManagedDaemonManager.checkVersion { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -372,16 +403,16 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
                     let expected = "\(LidSwitchDaemonConstants.protocolVersion);euid=0"
                     let isExpected = response == expected
                     if isExpected {
-                        self.showConfirmation("M2 daemon replied: \(response)")
+                        self.showConfirmation("Managed daemon replied: \(response)")
                     } else {
                         self.showError(
-                            title: "Unexpected M2 daemon response",
+                            title: "Unexpected managed daemon response",
                             message: response
                         )
                     }
                 case .failure(let error):
                     self.showError(
-                        title: "Couldn’t contact the M2 daemon",
+                        title: "Couldn’t contact the managed daemon",
                         message: error.localizedDescription
                     )
                 }
@@ -391,19 +422,20 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func unregisterM2Daemon() {
         let alert = NSAlert()
-        alert.messageText = "Unregister the M2 spike daemon?"
-        alert.informativeText = "This removes only the Service Management spike registration. The current LidSwitch helper and sudoers rule are unchanged."
-        alert.addButton(withTitle: "Unregister")
+        alert.messageText = "Remove managed lid control?"
+        alert.informativeText = "This unregisters the daemon and restores native lid sleep. The energy-mode helper is unchanged."
+        alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         do {
             try serviceManagedDaemonManager.unregister()
             updateM2DaemonUI()
-            showConfirmation("M2 daemon unregistered")
+            keepsWorkingWithLidClosed = nil
+            showConfirmation("Managed lid control removed")
         } catch {
             updateM2DaemonUI()
-            showError(title: "Couldn’t unregister the M2 daemon", message: error.localizedDescription)
+            showError(title: "Couldn’t remove managed lid control", message: error.localizedDescription)
         }
     }
 
@@ -476,7 +508,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
         switch status {
         case .notRegistered:
-            m2DaemonRegisterItem.title = "Register M2 daemon…"
+            m2DaemonRegisterItem.title = "Set up managed lid control…"
             m2DaemonRegisterItem.isEnabled = true
             m2DaemonCheckItem.isEnabled = false
             m2DaemonUnregisterItem.isEnabled = false
@@ -486,17 +518,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             m2DaemonCheckItem.isEnabled = false
             m2DaemonUnregisterItem.isEnabled = true
         case .enabled:
-            m2DaemonRegisterItem.title = "M2 daemon registered"
+            m2DaemonRegisterItem.title = "Managed lid control enabled"
             m2DaemonRegisterItem.isEnabled = false
             m2DaemonCheckItem.isEnabled = true
             m2DaemonUnregisterItem.isEnabled = true
         case .notFound, .unknown:
-            m2DaemonRegisterItem.title = "Register M2 daemon…"
+            m2DaemonRegisterItem.title = "Set up managed lid control…"
             m2DaemonRegisterItem.isEnabled = false
             m2DaemonCheckItem.isEnabled = false
             m2DaemonUnregisterItem.isEnabled = false
         }
-        m2DaemonCheckItem.title = "Check M2 daemon version"
+        m2DaemonCheckItem.title = "Check managed daemon version"
     }
 
     private func updateForecastUI() {
