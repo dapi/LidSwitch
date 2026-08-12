@@ -139,12 +139,15 @@ only while closed-lid work is enabled.
    starts and the previous event does not cause a delayed sleep.
 5. Repeat step 3 muted and at zero volume: no audible bypass, but sleep still
    follows the playback completion/fail-safe path.
-6. In sleep policy, force-quit the app immediately after closing. Confirm the
+6. In the tray menu, verify the four sound choices: all sounds, work-only,
+   sleep-only, and no sounds. Disabling the sleep sound must keep the silent
+   15-second cancellation window.
+7. In sleep policy, force-quit the app immediately after closing. Confirm the
    Mac sleeps rather than remaining awake. Repeat with daemon connection loss.
-7. Restart/kill the daemon while managed control is active. Confirm native sleep
+8. Restart/kill the daemon while managed control is active. Confirm native sleep
    is restored; work policy may safely degrade to sleep.
-8. Repeat work/sleep cases on battery in a ventilated stationary location.
-9. Never perform this test in a bag or enclosed space. Monitor temperature and
+9. Repeat work/sleep cases on battery in a ventilated stationary location.
+10. Never perform this test in a bag or enclosed space. Monitor temperature and
    stop immediately if the Mac becomes unusually hot.
 
 ## Pass criteria

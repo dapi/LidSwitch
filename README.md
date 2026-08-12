@@ -96,7 +96,7 @@ switching…** to remove it and its permission.
 
 The embedded root daemon owns the system-wide `disablesleep` setting only while
 the app maintains an authenticated heartbeat lease. It observes clamshell
-changes and tells the app to play `Glass` for continued work or `Funk` before
+changes and tells the app to play `Glass` for continued work or `Sosumi` before
 sleep. In sleep mode the app acknowledges sound completion; the daemon restores
 native sleep and explicitly requests system sleep. If the app disconnects or a
 deadline expires, the daemon restores native sleep first, so a closed Mac is not

@@ -17,6 +17,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let lowPowerItem = NSMenuItem(title: "Энергосбережение", action: #selector(selectLowPowerMode), keyEquivalent: "")
     private let automaticPowerItem = NSMenuItem(title: "Автоматически", action: #selector(selectAutomaticPowerMode), keyEquivalent: "")
     private let highPowerItem = NSMenuItem(title: "Высокая производительность", action: #selector(selectHighPowerMode), keyEquivalent: "")
+    private let soundHeader = NSMenuItem(title: "Звуки при закрытии крышки", action: nil, keyEquivalent: "")
+    private let allSoundsItem = NSMenuItem(title: "Все звуки", action: #selector(selectAllSounds), keyEquivalent: "")
+    private let workSoundOnlyItem = NSMenuItem(title: "Только при продолжении работы", action: #selector(selectWorkSoundOnly), keyEquivalent: "")
+    private let sleepSoundOnlyItem = NSMenuItem(title: "Только перед сном", action: #selector(selectSleepSoundOnly), keyEquivalent: "")
+    private let noSoundsItem = NSMenuItem(title: "Без звуков", action: #selector(selectNoSounds), keyEquivalent: "")
     private let helperAccessItem = NSMenuItem(
         title: "Set up passwordless switching…",
         action: #selector(manageHelperAccess),
@@ -75,6 +80,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         for item in [lowPowerItem, automaticPowerItem, highPowerItem] {
             item.target = self
         }
+        soundHeader.isEnabled = false
+        for item in [allSoundsItem, workSoundOnlyItem, sleepSoundOnlyItem, noSoundsItem] {
+            item.target = self
+        }
 
         menu.delegate = self
         menu.addItem(toggleItem)
@@ -85,6 +94,12 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         menu.addItem(lowPowerItem)
         menu.addItem(automaticPowerItem)
         menu.addItem(highPowerItem)
+        menu.addItem(.separator())
+        menu.addItem(soundHeader)
+        menu.addItem(allSoundsItem)
+        menu.addItem(workSoundOnlyItem)
+        menu.addItem(sleepSoundOnlyItem)
+        menu.addItem(noSoundsItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
@@ -300,6 +315,16 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
     }
 
+    @objc private func selectAllSounds() { selectSoundPreference(.all) }
+    @objc private func selectWorkSoundOnly() { selectSoundPreference(.workOnly) }
+    @objc private func selectSleepSoundOnly() { selectSoundPreference(.sleepOnly) }
+    @objc private func selectNoSounds() { selectSoundPreference(.none) }
+
+    private func selectSoundPreference(_ preference: LidSoundPreference) {
+        UserDefaults.standard.set(preference.rawValue, forKey: LidOutcomeSoundPlayer.preferenceKey)
+        updateUI()
+    }
+
     private func ensureHelperInstalled() throws -> Bool {
         guard !helperManager.isInstalled else { return true }
         let alert = NSAlert()
@@ -511,6 +536,11 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         lowPowerItem.state = energyMode == .lowPower ? .on : .off
         automaticPowerItem.state = energyMode == .automatic ? .on : .off
         highPowerItem.state = energyMode == .highPower ? .on : .off
+        let soundPreference = LidOutcomeSoundPlayer.preference
+        allSoundsItem.state = soundPreference == .all ? .on : .off
+        workSoundOnlyItem.state = soundPreference == .workOnly ? .on : .off
+        sleepSoundOnlyItem.state = soundPreference == .sleepOnly ? .on : .off
+        noSoundsItem.state = soundPreference == .none ? .on : .off
 
         updateForecastUI()
         helperAccessItem.title = helperManager.isInstalled
