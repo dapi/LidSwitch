@@ -5,28 +5,17 @@ repo_dir="${0:A:h:h}"
 configuration="${1:-release}"
 app_dir="$repo_dir/dist/LidSwitch.app"
 signing_identity="${LIDSWITCH_CODESIGN_IDENTITY:--}"
-protocol_variant="${LIDSWITCH_M2_PROTOCOL_VARIANT:-v1}"
 codesign_args=(--force --sign "$signing_identity")
-swift_build_args=()
-
-case "$protocol_variant" in
-    v1) ;;
-    v2) swift_build_args=(-Xswiftc -DLIDSWITCH_M2_PROTOCOL_V2) ;;
-    *)
-        print -u2 "LIDSWITCH_M2_PROTOCOL_VARIANT must be v1 or v2"
-        exit 2
-        ;;
-esac
 
 if [[ "$signing_identity" != "-" ]]; then
     codesign_args+=(--timestamp --options runtime)
 fi
 
 cd "$repo_dir"
-swift build -c "$configuration" --product LidSwitch "${swift_build_args[@]}"
-swift build -c "$configuration" --product LidSwitchHelper "${swift_build_args[@]}"
-swift build -c "$configuration" --product LidSwitchDaemon "${swift_build_args[@]}"
-swift build -c "$configuration" --product LidSwitchUnauthorizedProbe "${swift_build_args[@]}"
+swift build -c "$configuration" --product LidSwitch
+swift build -c "$configuration" --product LidSwitchHelper
+swift build -c "$configuration" --product LidSwitchDaemon
+swift build -c "$configuration" --product LidSwitchUnauthorizedProbe
 
 rm -rf "$app_dir"
 mkdir -p "$app_dir/Contents/MacOS"

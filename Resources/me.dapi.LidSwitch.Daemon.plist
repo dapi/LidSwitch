@@ -17,5 +17,7 @@
     </dict>
     <key>EnableTransactions</key>
     <true/>
+    <key>KeepAlive</key>
+    <true/>
 </dict>
 </plist>
