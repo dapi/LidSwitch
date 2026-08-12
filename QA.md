@@ -128,7 +128,7 @@ only while closed-lid work is enabled.
 ### 5. Actual lid behavior and safety
 
 1. Register and approve **Managed lid control**. Confirm the daemon version is
-   `managed-lid-v1` and the menu shows a confirmed policy.
+   `managed-lid-v2` and the menu shows a confirmed policy.
 2. On AC, select work, start a visible/logged task, close the lid, and verify one
    `Glass` sound occurs and the task continues. Duplicate clamshell events must
    not produce repeated sounds.

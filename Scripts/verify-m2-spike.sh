@@ -51,7 +51,7 @@ fi
 status_output="$($app_dir/Contents/MacOS/LidSwitch --m2-daemon-status)"
 [[ "$status_output" == *"auth:"* ]]
 protocol_version="$($app_dir/Contents/MacOS/LidSwitch --m2-protocol-version)"
-[[ "$protocol_version" == "managed-lid-v1" ]]
+[[ "$protocol_version" == "managed-lid-v2" ]]
 
 "$repo_dir/.build/$configuration/LidSwitchCoreChecks"
 "$repo_dir/.build/$configuration/LidSwitchDaemonProtocolChecks"

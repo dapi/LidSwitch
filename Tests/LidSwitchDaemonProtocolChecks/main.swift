@@ -138,7 +138,7 @@ do {
     )
     try require(plist["EnableTransactions"] as? Bool == true, "Transactions must be enabled")
     try require(plist["KeepAlive"] as? Bool == true, "Daemon must restart to restore native sleep after a crash")
-    try require(LidSwitchDaemonConstants.protocolVersion == "managed-lid-v1", "Unexpected managed-lid protocol version")
+    try require(LidSwitchDaemonConstants.protocolVersion == "managed-lid-v2", "Unexpected managed-lid protocol version")
 
     print("All LidSwitchDaemonProtocol checks passed")
 } catch {
