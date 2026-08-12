@@ -132,25 +132,25 @@ final class HoverStatusViewController: NSViewController {
 
     private var statusColor: NSColor {
         switch model.keepsWorking {
-        case true: return .systemGreen
-        case false: return .systemYellow
-        case nil: return .systemGray
+        case .some(true): return .systemGreen
+        case .some(false): return .systemYellow
+        case .none: return .systemGray
         }
     }
 
     private var statusTitle: String {
         switch model.keepsWorking {
-        case true: return "Работа с закрытой крышкой включена"
-        case false: return "Сон при закрытии крышки включён"
-        case nil: return "Состояние режима неизвестно"
+        case .some(true): return "Работа с закрытой крышкой включена"
+        case .some(false): return "Сон при закрытии крышки включён"
+        case .none: return "Состояние режима неизвестно"
         }
     }
 
     private var statusSubtitle: String {
         switch model.keepsWorking {
-        case true: return "Mac продолжит работать после закрытия крышки"
-        case false: return "Mac уснёт после закрытия крышки"
-        case nil: return "Обновите состояние через контекстное меню"
+        case .some(true): return "Mac продолжит работать после закрытия крышки"
+        case .some(false): return "Mac уснёт после закрытия крышки"
+        case .none: return "Обновите состояние через контекстное меню"
         }
     }
 

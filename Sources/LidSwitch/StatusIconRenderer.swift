@@ -4,11 +4,11 @@ enum StatusIconRenderer {
     static func image(keepsWorking: Bool?, forecastHours: Int?) -> NSImage {
         let text: String
         switch keepsWorking {
-        case true:
+        case .some(true):
             text = forecastHours.map { String(min(999, max(0, $0))) } ?? "…"
-        case false:
+        case .some(false):
             text = "Zz"
-        case nil:
+        case .none:
             text = "?"
         }
         let size = NSSize(width: 22, height: 18)
@@ -17,9 +17,9 @@ enum StatusIconRenderer {
             let screen = NSBezierPath(roundedRect: screenRect, xRadius: 2, yRadius: 2)
 
             switch keepsWorking {
-            case true: NSColor.systemGreen.setFill()
-            case false: NSColor.systemYellow.setFill()
-            case nil: NSColor.systemGray.setFill()
+            case .some(true): NSColor.systemGreen.setFill()
+            case .some(false): NSColor.systemYellow.setFill()
+            case .none: NSColor.systemGray.setFill()
             }
             screen.fill()
 

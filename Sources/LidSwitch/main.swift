@@ -442,17 +442,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     private func updateUI() {
         switch keepsWorkingWithLidClosed {
-        case true:
+        case .some(true):
             toggleItem.title = "Allow sleep when lid closes"
             toggleItem.state = .on
             toggleItem.isEnabled = true
             statusTextItem.title = "Closed-lid work: Enabled"
-        case false:
+        case .some(false):
             toggleItem.title = "Keep working when lid closes"
             toggleItem.state = .off
             toggleItem.isEnabled = true
             statusTextItem.title = "Closed-lid work: Disabled"
-        case nil:
+        case .none:
             toggleItem.title = "Closed-lid work"
             toggleItem.state = .mixed
             toggleItem.isEnabled = false
