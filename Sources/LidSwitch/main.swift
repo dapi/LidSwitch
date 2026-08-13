@@ -22,6 +22,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let workSoundOnlyItem = NSMenuItem(title: "Только при продолжении работы", action: #selector(selectWorkSoundOnly), keyEquivalent: "")
     private let sleepSoundOnlyItem = NSMenuItem(title: "Только перед сном", action: #selector(selectSleepSoundOnly), keyEquivalent: "")
     private let noSoundsItem = NSMenuItem(title: "Без звуков", action: #selector(selectNoSounds), keyEquivalent: "")
+    private let debugLoggingItem = NSMenuItem(title: "Включить диагностику звука", action: #selector(toggleDebugLogging), keyEquivalent: "")
     private let helperAccessItem = NSMenuItem(
         title: "Set up passwordless switching…",
         action: #selector(manageHelperAccess),
@@ -81,7 +82,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             item.target = self
         }
         soundHeader.isEnabled = false
-        for item in [allSoundsItem, workSoundOnlyItem, sleepSoundOnlyItem, noSoundsItem] {
+        for item in [allSoundsItem, workSoundOnlyItem, sleepSoundOnlyItem, noSoundsItem, debugLoggingItem] {
             item.target = self
         }
 
@@ -100,6 +101,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         menu.addItem(workSoundOnlyItem)
         menu.addItem(sleepSoundOnlyItem)
         menu.addItem(noSoundsItem)
+        menu.addItem(debugLoggingItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
@@ -142,6 +144,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
         serviceManagedDaemonManager.didCloseLid = { [weak self] eventID, policy in
             guard let self else { return }
+            LidSwitchDiagnostics.log("application didCloseLid event=\(eventID) policy=\(policy)")
             if policy == .sleep {
                 self.outcomeSoundPlayer.play(policy: policy, eventID: eventID) { [weak self] in
                     self?.serviceManagedDaemonManager.feedbackDidFinish(eventID: eventID)
@@ -323,6 +326,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func selectSoundPreference(_ preference: LidSoundPreference) {
         UserDefaults.standard.set(preference.rawValue, forKey: LidOutcomeSoundPlayer.preferenceKey)
         updateUI()
+    }
+
+    @objc private func toggleDebugLogging() {
+        let enabled = !LidSwitchDiagnostics.enabled
+        UserDefaults.standard.set(enabled, forKey: LidSwitchDiagnostics.enabledKey)
+        LidSwitchDiagnostics.log("debug logging enabled")
+        updateUI()
+        showConfirmation(enabled ? "Диагностика включена" : "Диагностика выключена")
     }
 
     private func ensureHelperInstalled() throws -> Bool {
@@ -541,6 +552,10 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         workSoundOnlyItem.state = soundPreference == .workOnly ? .on : .off
         sleepSoundOnlyItem.state = soundPreference == .sleepOnly ? .on : .off
         noSoundsItem.state = soundPreference == .none ? .on : .off
+        debugLoggingItem.state = LidSwitchDiagnostics.enabled ? .on : .off
+        debugLoggingItem.title = LidSwitchDiagnostics.enabled
+            ? "Выключить диагностику звука"
+            : "Включить диагностику звука"
 
         updateForecastUI()
         helperAccessItem.title = helperManager.isInstalled

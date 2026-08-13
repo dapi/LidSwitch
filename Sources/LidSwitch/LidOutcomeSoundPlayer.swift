@@ -30,6 +30,7 @@ final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
     }
 
     func play(policy: DaemonLidPolicy, eventID: String, completion: (() -> Void)? = nil) {
+        LidSwitchDiagnostics.log("play requested event=\(eventID) policy=\(policy) preference=\(Self.preference.rawValue)")
         warningTimer?.invalidate()
         warningTimer = nil
         currentSound?.stop()
@@ -45,6 +46,7 @@ final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
 
         let soundEnabled = policy == .work ? Self.preference.workEnabled : Self.preference.sleepEnabled
         logger.info("Lid event \(eventID, privacy: .public): policy=\(policy.rawValue, privacy: .public), soundEnabled=\(soundEnabled, privacy: .public)")
+        LidSwitchDiagnostics.log("sound decision event=\(eventID) enabled=\(soundEnabled)")
         guard soundEnabled else { return }
 
         let name = policy == .work ? "Glass" : "Sosumi"
@@ -52,6 +54,7 @@ final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
             ?? NSSound(contentsOfFile: "/System/Library/Sounds/\(name).aiff", byReference: true)
         guard let sound else {
             logger.error("Could not load system sound \(name, privacy: .public)")
+            LidSwitchDiagnostics.log("sound load failed name=\(name)")
             if policy == .work { completion?() }
             return
         }
@@ -61,6 +64,7 @@ final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
         if policy == .sleep { sound.loops = true }
         let started = sound.play()
         logger.info("Started system sound \(name, privacy: .public): \(started, privacy: .public)")
+        LidSwitchDiagnostics.log("sound play name=\(name) started=\(started) duration=\(sound.duration)")
         if !started {
             if policy == .sleep { return }
             finish()

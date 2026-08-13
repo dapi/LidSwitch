@@ -124,10 +124,12 @@ final class ServiceManagedDaemonManager: NSObject, LidSwitchAppXPCProtocol {
 
     func lidDidClose(eventID: String, policyRaw: Int) {
         guard let policy = DaemonLidPolicy(rawValue: policyRaw) else { return }
+        LidSwitchDiagnostics.log("daemon lidDidClose event=\(eventID) policy=\(policy)")
         DispatchQueue.main.async { [weak self] in self?.didCloseLid?(eventID, policy) }
     }
 
     func sleepCancelled(eventID: String) {
+        LidSwitchDiagnostics.log("daemon sleepCancelled event=\(eventID)")
         DispatchQueue.main.async { [weak self] in self?.didCancelSleep?(eventID) }
     }
 
