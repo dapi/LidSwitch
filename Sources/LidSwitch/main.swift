@@ -22,7 +22,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let workSoundOnlyItem = NSMenuItem(title: "Только при продолжении работы", action: #selector(selectWorkSoundOnly), keyEquivalent: "")
     private let sleepSoundOnlyItem = NSMenuItem(title: "Только перед сном", action: #selector(selectSleepSoundOnly), keyEquivalent: "")
     private let noSoundsItem = NSMenuItem(title: "Без звуков", action: #selector(selectNoSounds), keyEquivalent: "")
-    private let debugLoggingItem = NSMenuItem(title: "Включить диагностику звука", action: #selector(toggleDebugLogging), keyEquivalent: "")
     private let helperAccessItem = NSMenuItem(
         title: "Set up passwordless switching…",
         action: #selector(manageHelperAccess),
@@ -82,7 +81,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             item.target = self
         }
         soundHeader.isEnabled = false
-        for item in [allSoundsItem, workSoundOnlyItem, sleepSoundOnlyItem, noSoundsItem, debugLoggingItem] {
+        for item in [allSoundsItem, workSoundOnlyItem, sleepSoundOnlyItem, noSoundsItem] {
             item.target = self
         }
 
@@ -101,7 +100,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         menu.addItem(workSoundOnlyItem)
         menu.addItem(sleepSoundOnlyItem)
         menu.addItem(noSoundsItem)
-        menu.addItem(debugLoggingItem)
         menu.addItem(.separator())
 
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
@@ -328,14 +326,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         updateUI()
     }
 
-    @objc private func toggleDebugLogging() {
-        let enabled = !LidSwitchDiagnostics.enabled
-        UserDefaults.standard.set(enabled, forKey: LidSwitchDiagnostics.enabledKey)
-        LidSwitchDiagnostics.log("debug logging enabled")
-        updateUI()
-        showConfirmation(enabled ? "Диагностика включена" : "Диагностика выключена")
-    }
-
     private func ensureHelperInstalled() throws -> Bool {
         guard !helperManager.isInstalled else { return true }
         let alert = NSAlert()
@@ -552,10 +542,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         workSoundOnlyItem.state = soundPreference == .workOnly ? .on : .off
         sleepSoundOnlyItem.state = soundPreference == .sleepOnly ? .on : .off
         noSoundsItem.state = soundPreference == .none ? .on : .off
-        debugLoggingItem.state = LidSwitchDiagnostics.enabled ? .on : .off
-        debugLoggingItem.title = LidSwitchDiagnostics.enabled
-            ? "Выключить диагностику звука"
-            : "Включить диагностику звука"
 
         updateForecastUI()
         helperAccessItem.title = helperManager.isInstalled
@@ -702,6 +688,11 @@ private func runM2CommandLineModeIfRequested() {
     }
     _ = semaphore.wait(timeout: .now() + 7)
     exit(exitCode)
+}
+
+if CommandLine.arguments.contains("--debug") {
+    UserDefaults.standard.set(true, forKey: LidSwitchDiagnostics.enabledKey)
+    LidSwitchDiagnostics.log("debug logging enabled via --debug")
 }
 
 runM2CommandLineModeIfRequested()
