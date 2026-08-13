@@ -153,6 +153,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         }
         serviceManagedDaemonManager.didCancelSleep = { [weak self] eventID in
             self?.outcomeSoundPlayer.cancel(eventID: eventID)
+            self?.showCancelledSleepChoice(eventID: eventID)
         }
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -370,6 +371,48 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
             if self?.confirmationPopover === popover {
                 self?.confirmationPopover = nil
             }
+        }
+    }
+
+    private func showCancelledSleepChoice(eventID: String) {
+        LidSwitchDiagnostics.log("showing cancelled sleep choice event=\(eventID)")
+        let alert = NSAlert()
+        alert.messageText = "Крышка открыта — сон отменён"
+        alert.informativeText = "Компьютер должен сейчас уснуть или продолжить работу с закрытой крышкой?"
+        alert.addButton(withTitle: "Уснуть сейчас")
+        alert.addButton(withTitle: "Оставить включённым")
+        alert.alertStyle = .informational
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            LidSwitchDiagnostics.log("user chose sleep now event=\(eventID)")
+            requestSystemSleep()
+        } else {
+            LidSwitchDiagnostics.log("user chose keep awake event=\(eventID)")
+            serviceManagedDaemonManager.activate(policy: .work) { [weak self] accepted, message in
+                guard let self else { return }
+                guard accepted else {
+                    self.showError(title: "Не удалось отключить засыпание", message: message)
+                    return
+                }
+                UserDefaults.standard.set(true, forKey: self.desiredPolicyKey)
+                self.keepsWorkingWithLidClosed = true
+                self.updateUI()
+                self.showConfirmation("Засыпание при закрытой крышке отключено")
+            }
+        }
+    }
+
+    private func requestSystemSleep() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["sleepnow"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            LidSwitchDiagnostics.log("requested system sleep via pmset")
+        } catch {
+            showError(title: "Не удалось отправить компьютер в сон", message: error.localizedDescription)
         }
     }
 
