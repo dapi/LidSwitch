@@ -1,5 +1,6 @@
 import AppKit
 import LidSwitchDaemonProtocol
+import os
 
 enum LidSoundPreference: String {
     case all
@@ -12,6 +13,7 @@ enum LidSoundPreference: String {
 }
 
 final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
+    private let logger = Logger(subsystem: "me.dapi.LidSwitch", category: "lid-sounds")
     private var currentSound: NSSound?
     private var completion: (() -> Void)?
     private var currentEventID: String?
@@ -42,17 +44,24 @@ final class LidOutcomeSoundPlayer: NSObject, NSSoundDelegate {
         }
 
         let soundEnabled = policy == .work ? Self.preference.workEnabled : Self.preference.sleepEnabled
+        logger.info("Lid event \(eventID, privacy: .public): policy=\(policy.rawValue, privacy: .public), soundEnabled=\(soundEnabled, privacy: .public)")
         guard soundEnabled else { return }
 
         let name = policy == .work ? "Glass" : "Sosumi"
-        guard let sound = NSSound(named: NSSound.Name(name)) else {
+        let sound = NSSound(named: NSSound.Name(name))
+            ?? NSSound(contentsOfFile: "/System/Library/Sounds/\(name).aiff", byReference: true)
+        guard let sound else {
+            logger.error("Could not load system sound \(name, privacy: .public)")
             if policy == .work { completion?() }
             return
         }
         currentSound = sound
         sound.delegate = self
+        sound.volume = 1
         if policy == .sleep { sound.loops = true }
-        if !sound.play() {
+        let started = sound.play()
+        logger.info("Started system sound \(name, privacy: .public): \(started, privacy: .public)")
+        if !started {
             if policy == .sleep { return }
             finish()
         }
