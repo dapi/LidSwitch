@@ -380,7 +380,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         alert.messageText = "Крышка открыта — сон отменён"
         alert.informativeText = "Компьютер должен сейчас уснуть или продолжить работу с закрытой крышкой?"
         alert.addButton(withTitle: "Уснуть сейчас")
-        alert.addButton(withTitle: "Оставить включённым")
+        alert.addButton(withTitle: "После закрытия крышки оставить включённым")
         alert.alertStyle = .informational
 
         if alert.runModal() == .alertFirstButtonReturn {
