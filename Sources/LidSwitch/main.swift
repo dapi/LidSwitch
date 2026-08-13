@@ -379,8 +379,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate
         let alert = NSAlert()
         alert.messageText = "Крышка открыта — сон отменён"
         alert.informativeText = "Компьютер должен сейчас уснуть или продолжить работу с закрытой крышкой?"
-        alert.addButton(withTitle: "Уснуть сейчас")
-        alert.addButton(withTitle: "После закрытия крышки оставить включённым")
+        alert.addButton(withTitle: "💤 Уснуть сейчас")
+        alert.addButton(withTitle: "🔒 Оставить включённым после закрытия")
         alert.alertStyle = .informational
 
         if alert.runModal() == .alertFirstButtonReturn {
